@@ -1,0 +1,1 @@
+LiteParse automatic folder integration test. This sentence must appear in the generated Markdown output. Verification token: PDF-AUTO-240.

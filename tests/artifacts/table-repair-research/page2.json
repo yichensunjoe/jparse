@@ -1,0 +1,482 @@
+{
+  "pages": [
+    {
+      "page": 2,
+      "width": 841.9,
+      "height": 595.3,
+      "text": " 附件\n\n       2026 年度学术会议最具影响力论文名单\n\n 序号    论文名称                            作者单位        作者\n                                  上海发电设备成套设计研究院有\n 1     基于应力仿真分析的高温气冷堆一回路电气贯穿件可靠性评估     限责任公司       何雨薇，潘聪\n 2     某核电站循泵泵轴腐蚀修复工艺研究与实践          中核运维技术有限公司     代鸿凌，杨政，高林\n 3     考虑制造偏差的叶片-轮盘结构模态特性研究          江苏核电有限公司      李战争，张勇，方小峰\n 4     无刷励磁机断相保护动作异常原因及调试方案优化研究      中广核工程有限公司     向超，齐书云，程玉平\n 5     核小堆技术迭代、产业瓶颈及商业化发展路径探索       中国华电集团有限公司     彭疆南，查方正，宋宁\n 6     中国核电产业的结构跃迁与需求演变（2000-2025）  福建福清核电有限公司     张媛媛， 陈全润\n 7     ARM 与 C86 平台下核电设计软件的迁移路径研究    中广核工程有限公司     汪纯锋，王云福，颜斯泰\n 8     核电厂蒸汽发生器液位控制优化方案研究与应用       中广核苏州热工院有限公司    张冬冬，雷胜\n 9     压水堆核电厂核取样系统化学去污方法研究与工程应用     福建宁德核电有限公司     阳坤峰，刘辉，虞泽锋\n10     乙醇胺应用对压水堆核电机组蒸汽发生器出口压力影响研究   福建宁德核电有限公司     曹敬，宋利君，梁义才",
+      "text_items": [
+        {
+          "text": "附件",
+          "x": 71.99999,
+          "y": 97.70795,
+          "width": 31.9094,
+          "height": 16.18924,
+          "font_name": "XEKKFX+SimHei",
+          "font_size": 319.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "2026 年度学术会议最具影响力论文名单",
+          "x": 265.67996,
+          "y": 131.08401,
+          "width": 310.55997,
+          "height": 21.077972,
+          "font_name": "ADAMHP+FZXBSK--GBK1-0",
+          "font_size": 360.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "序号",
+          "x": 70.19999,
+          "y": 170.65302,
+          "width": 24.0,
+          "height": 13.355988,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "论文名称",
+          "x": 253.91997,
+          "y": 170.65302,
+          "width": 48.119583,
+          "height": 13.355988,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "作者单位",
+          "x": 523.67993,
+          "y": 170.65302,
+          "width": 48.119568,
+          "height": 13.355988,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "作者",
+          "x": 696.35895,
+          "y": 170.65302,
+          "width": 24.000061,
+          "height": 13.355988,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "上海发电设备成套设计研究院有",
+          "x": 463.79993,
+          "y": 192.73401,
+          "width": 168.00006,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "1",
+          "x": 79.44,
+          "y": 203.41403,
+          "width": 5.760002,
+          "height": 13.355988,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "基于应力仿真分析的高温气冷堆一回路电气贯穿件可靠性评估",
+          "x": 116.04,
+          "y": 201.73401,
+          "width": 324.0,
+          "height": 13.355988,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "限责任公司",
+          "x": 517.8,
+          "y": 210.73401,
+          "width": 60.0,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "何雨薇，潘聪",
+          "x": 672.4799,
+          "y": 201.73401,
+          "width": 72.0,
+          "height": 13.355988,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "2",
+          "x": 79.32,
+          "y": 236.05301,
+          "width": 5.9039993,
+          "height": 13.355988,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "某核电站循泵泵轴腐蚀修复工艺研究与实践",
+          "x": 164.04,
+          "y": 234.374,
+          "width": 227.99998,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "中核运维技术有限公司",
+          "x": 487.8,
+          "y": 234.374,
+          "width": 120.0,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "代鸿凌，杨政，高林",
+          "x": 654.48,
+          "y": 234.374,
+          "width": 108.0,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "3",
+          "x": 79.2,
+          "y": 264.85303,
+          "width": 6.036003,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "考虑制造偏差的叶片-轮盘结构模态特性研究",
+          "x": 160.19998,
+          "y": 263.174,
+          "width": 235.68002,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "江苏核电有限公司",
+          "x": 499.8,
+          "y": 263.174,
+          "width": 96.0,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "李战争，张勇，方小峰",
+          "x": 645.0,
+          "y": 263.174,
+          "width": 119.99994,
+          "height": 13.356018,
+          "font_name": "NREKVL+FangSong_GB2312",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "4",
+          "x": 79.079994,
+          "y": 293.77402,
+          "width": 6.4680023,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "无刷励磁机断相保护动作异常原因及调试方案优化研究",
+          "x": 134.04,
+          "y": 292.09402,
+          "width": 288.0,
+          "height": 13.355988,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "中广核工程有限公司",
+          "x": 493.79993,
+          "y": 292.09402,
+          "width": 108.00006,
+          "height": 13.355988,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "向超，齐书云，程玉平",
+          "x": 648.48,
+          "y": 292.09402,
+          "width": 119.99994,
+          "height": 13.355988,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "5",
+          "x": 79.44,
+          "y": 322.574,
+          "width": 5.8079987,
+          "height": 13.355988,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "核小堆技术迭代、产业瓶颈及商业化发展路径探索",
+          "x": 146.04,
+          "y": 320.894,
+          "width": 264.0,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "中国华电集团有限公司",
+          "x": 487.8,
+          "y": 320.894,
+          "width": 120.0,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "彭疆南，查方正，宋宁",
+          "x": 648.48,
+          "y": 320.894,
+          "width": 119.99994,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "6",
+          "x": 79.44,
+          "y": 351.49402,
+          "width": 5.760002,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "中国核电产业的结构跃迁与需求演变（2000-2025）",
+          "x": 142.79999,
+          "y": 349.69397,
+          "width": 270.47995,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "福建福清核电有限公司",
+          "x": 487.8,
+          "y": 349.69397,
+          "width": 120.0,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "张媛媛， 陈全润",
+          "x": 663.48,
+          "y": 349.69397,
+          "width": 89.99994,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "7",
+          "x": 79.2,
+          "y": 380.294,
+          "width": 6.0839996,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "ARM 与 C86 平台下核电设计软件的迁移路径研究",
+          "x": 153.0,
+          "y": 378.61298,
+          "width": 249.95895,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "中广核工程有限公司",
+          "x": 493.79993,
+          "y": 378.61298,
+          "width": 108.00006,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "汪纯锋，王云福，颜斯泰",
+          "x": 645.0,
+          "y": 378.61298,
+          "width": 126.84003,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "8",
+          "x": 79.2,
+          "y": 409.094,
+          "width": 6.227997,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "核电厂蒸汽发生器液位控制优化方案研究与应用",
+          "x": 152.03998,
+          "y": 407.414,
+          "width": 251.99997,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "中广核苏州热工院有限公司",
+          "x": 475.8,
+          "y": 407.414,
+          "width": 144.0,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "张冬冬，雷胜",
+          "x": 672.4799,
+          "y": 407.414,
+          "width": 72.0,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "9",
+          "x": 79.44,
+          "y": 438.014,
+          "width": 5.711998,
+          "height": 13.355988,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "压水堆核电厂核取样系统化学去污方法研究与工程应用",
+          "x": 134.04,
+          "y": 436.334,
+          "width": 288.0,
+          "height": 13.355988,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "福建宁德核电有限公司",
+          "x": 487.8,
+          "y": 436.334,
+          "width": 120.0,
+          "height": 13.355988,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "阳坤峰，刘辉，虞泽锋",
+          "x": 648.48,
+          "y": 436.334,
+          "width": 119.99994,
+          "height": 13.355988,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "10",
+          "x": 76.439995,
+          "y": 466.813,
+          "width": 11.567406,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "乙醇胺应用对压水堆核电机组蒸汽发生器出口压力影响研究",
+          "x": 122.04,
+          "y": 465.13397,
+          "width": 312.0,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "福建宁德核电有限公司",
+          "x": 487.8,
+          "y": 465.13397,
+          "width": 120.0,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        },
+        {
+          "text": "曹敬，宋利君，梁义才",
+          "x": 648.48,
+          "y": 465.13397,
+          "width": 119.99994,
+          "height": 13.356018,
+          "font_name": "QJOVUG+FZSJ-FANGSGBTTOT",
+          "font_size": 240.0,
+          "confidence": 1.0
+        }
+      ]
+    }
+  ]
+}
