@@ -1,6 +1,6 @@
 # LiteParse PDF 自动识别
 
-## 项目目标
+## Purpose
 
 基于本机 LiteParse 2.4.0，实现一个 macOS 本地后台自动化：将 PDF 放入 `inbox/`，待文件写入稳定后自动识别，并在 `outbox/` 同时保留排好版的 HTML 与便于 Agent 处理的 Markdown。Markdown 会自动合并同一自然段内由 PDF/OCR 版面造成的软换行。全程不调用 LLM。
 
@@ -14,9 +14,18 @@
 - 使用已获“文稿”访问权的当前用户会话在后台运行；重启 Mac 后可双击项目内的启动入口。
 - 成功后归档原 PDF，失败时保留原文件和错误说明。
 
-## 当前状态
+## Status
 
 已完成，后台监控正在运行。
+
+“正在运行”是 2026-07-15 的最近一次已记录验收，不代表每次开机后的实时状态；当前状态应以“查看运行状态”入口或下方 `status` 命令为准。
+
+## Stack
+
+- Python 3 标准库：监控、原子发布、确定性 HTML 与 Markdown 重排。
+- LiteParse `lit` CLI：文字层/OCR 和内嵌位图提取。
+- Poppler 与 Tesseract：长篇扫描书的原页保真和辅助 OCR 路由。
+- macOS 用户会话后台进程：不注册系统级常驻服务。
 
 ## 最简单用法
 
@@ -38,6 +47,23 @@
 - [`停止自动识别.command`](停止自动识别.command)
 
 当前后台进程会持续运行。重启 Mac 或退出登录后，双击“启动自动识别”即可恢复。
+
+## Commands
+
+```bash
+# 查看、启动和停止后台监控
+python3 -m src.manage status
+python3 -m src.manage start
+python3 -m src.manage stop
+
+# 前台运行，便于查看即时错误
+python3 -m src.watcher
+
+# 离线单元测试；不会读取 inbox/processed 中的用户 PDF
+python3 -m unittest discover -s tests -v
+```
+
+项目无独立 `build` 或 `lint` 命令；完整端到端验收需要向 `inbox/` 投递一份无敏感信息的小 PDF。
 
 ## 默认处理策略
 
@@ -75,7 +101,7 @@
 - 密码保护 PDF 会失败并进入 `failed/`，当前不在配置中保存 PDF 密码。
 - macOS 不允许未授权的 `launchd` 任务直接读取“文稿”内的项目。为了不复制项目到工作区外、也不给 Python 过宽的磁盘权限，本项目由已获文稿访问权的用户会话启动独立后台进程。
 
-## 目录
+## Project Structure
 
 - `inbox/`：PDF 投递箱。
 - `outbox/`：HTML、Markdown 与 Markdown 图片资源。
@@ -88,6 +114,17 @@
 - `assets/`：项目资源。
 - `logs/`：有上限的运行日志。
 - `tasks/`：简短任务记录。
+
+## Configuration
+
+运行参数集中在 [`config.json`](config.json)，包括投递/处理/成功/失败/日志目录、稳定等待时间、轮询间隔、页数与超时上限、OCR 语言和并发数。相对路径按项目根解析。
+
+- `reflow_markdown` 控制确定性段落重排。
+- `scan_book_page_threshold` 控制长篇无文字层 PDF 是否转入原页保真路由。
+- `log_max_bytes` 与 `log_backup_count` 限制日志增长。
+- 项目不需要 API Key，也不应把 PDF 密码写入配置。
+
+迁移机器前应同时检查 `lit`、`pdftoppm`、`tesseract` 及语言数据是否可用；缺失时相关路由会失败，而不是自动上传或调用云端服务。
 
 ## 验证
 
