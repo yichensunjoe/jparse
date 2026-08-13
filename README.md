@@ -27,7 +27,7 @@
 - Poppler 与 Tesseract：长篇扫描书的原页保真和辅助 OCR 路由。
 - macOS 用户会话后台进程：不注册系统级常驻服务。
 
-## 最简单用法
+## Quick Start
 
 1. 把 PDF 放入 [`inbox/`](inbox/)。
 2. 等待至少 5 秒，再等 LiteParse 完成识别。
@@ -88,7 +88,7 @@ python3 -m unittest discover -s tests -v
 
 参数可在 [`config.json`](config.json) 中调整。
 
-## 说明与边界
+## Notes
 
 - 整个识别流程在本机执行，不上传 PDF 内容。
 - HTML 排版是固定规则与 CSS，没有 LLM 摘要、改写、纠错或内容判断。
