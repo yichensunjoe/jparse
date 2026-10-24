@@ -59,6 +59,9 @@ def process_vector_pdf_with_pdf2zh(
     except Exception as e:
         logger.warning("检查并应用 pdf2zh 补丁失败: %s", e)
 
+    # Safe formula font regex that excludes regular Latin text italics (e.g. Palatino-Italic, Times-Italic)
+    safe_vfont = r"(CM[^R]|MS.M|XY|MT|BL|RM|EU|LA|RS|LINE|LCIRCLE|TeX-|rsfs|txsy|wasy|stmary|.*Mono|.*Code|.*MathItal|.*Sym|.*Math)"
+
     with tempfile.TemporaryDirectory() as tmp_dir_str:
         tmp_dir = Path(tmp_dir_str)
         cmd = [
@@ -67,6 +70,7 @@ def process_vector_pdf_with_pdf2zh(
             "-o", str(tmp_dir),
             "-s", service,
             "-t", str(thread),
+            "-f", safe_vfont,
         ]
         if pages:
             cmd.extend(["-p", pages])

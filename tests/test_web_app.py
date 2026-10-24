@@ -84,6 +84,97 @@ class TestLiteParseWebApp(unittest.TestCase):
             self.assertEqual(task["filename"], "test_upload.pdf")
             self.assertEqual(task["relative_path"], "papers/subfolder/test_upload.pdf")
 
+    def test_upload_boundary_with_parameters_and_quotes(self):
+        raw_boundary = "WebKitFormBoundaryQuotes123"
+        body = (
+            f"--{raw_boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="quoted.pdf"\r\n'
+            f"Content-Type: application/pdf\r\n\r\n"
+            f"%PDF-1.4 sample\r\n"
+            f"--{raw_boundary}--\r\n"
+        ).encode("utf-8")
+
+        req = Request(
+            f"{self.base_url}/api/upload",
+            data=body,
+            headers={"Content-Type": f'multipart/form-data; boundary="{raw_boundary}"; charset=utf-8'},
+            method="POST",
+        )
+        with urlopen(req) as resp:
+            self.assertEqual(resp.status, 200)
+            data = json.loads(resp.read().decode("utf-8"))
+            self.assertTrue(data.get("ok"))
+            self.assertEqual(data["task"]["filename"], "quoted.pdf")
+
+    def test_upload_duplicate_disambiguation(self):
+        boundary = "BoundaryDupeTest"
+        for i in range(2):
+            body = (
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="relativePath"\r\n\r\n'
+                f"folder{i+1}/common.pdf\r\n"
+                f"--{boundary}\r\n"
+                f'Content-Disposition: form-data; name="file"; filename="common.pdf"\r\n'
+                f"Content-Type: application/pdf\r\n\r\n"
+                f"%PDF-1.4 mock content {i}\r\n"
+                f"--{boundary}--\r\n"
+            ).encode("utf-8")
+            req = Request(
+                f"{self.base_url}/api/upload",
+                data=body,
+                headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+                method="POST",
+            )
+            with urlopen(req) as resp:
+                self.assertEqual(resp.status, 200)
+                data = json.loads(resp.read().decode("utf-8"))
+                if i == 0:
+                    self.assertEqual(data["task"]["filename"], "common.pdf")
+                else:
+                    self.assertEqual(data["task"]["filename"], "common_1.pdf")
+
+    def test_upload_reject_non_pdf(self):
+        boundary = "BoundaryTextTest"
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="notes.txt"\r\n'
+            f"Content-Type: text/plain\r\n\r\n"
+            f"Hello World\r\n"
+            f"--{boundary}--\r\n"
+        ).encode("utf-8")
+        req = Request(
+            f"{self.base_url}/api/upload",
+            data=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method="POST",
+        )
+        with self.assertRaises(HTTPError) as ctx:
+            urlopen(req)
+        self.assertEqual(ctx.exception.code, 400)
+
+    def test_upload_binary_trailing_bytes_preserved(self):
+        boundary = "BoundaryBinaryTest"
+        # Content ending with 3 trailing newlines/returns which must not be lost
+        payload = b"%PDF-1.4 binary data\x00\xff\r\n\r\n"
+        body = (
+            f"--{boundary}\r\n"
+            f'Content-Disposition: form-data; name="file"; filename="binary_exact.pdf"\r\n'
+            f"Content-Type: application/pdf\r\n\r\n"
+        ).encode("utf-8") + payload + f"\r\n--{boundary}--\r\n".encode("utf-8")
+
+        req = Request(
+            f"{self.base_url}/api/upload",
+            data=body,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+            method="POST",
+        )
+        with urlopen(req) as resp:
+            self.assertEqual(resp.status, 200)
+
+        saved = self.task_mgr.inbox_dir / "binary_exact.pdf"
+        self.assertTrue(saved.exists())
+        self.assertEqual(saved.read_bytes(), payload)
+
     def test_reveal_endpoints(self):
         req1 = Request(f"{self.base_url}/api/reveal_outbox", data=b"", method="POST")
         with urlopen(req1) as resp:

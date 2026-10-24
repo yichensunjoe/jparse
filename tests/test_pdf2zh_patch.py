@@ -101,6 +101,51 @@ class TestPdf2zhPatch(unittest.TestCase):
 
         self.assertEqual(remaining, [1])
 
+    def test_patch_converter_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            venv_path = Path(tmp_dir)
+            pkg_dir = venv_path / "lib/python3.12/site-packages/pdf2zh"
+            pkg_dir.mkdir(parents=True, exist_ok=True)
+            conv_file = pkg_dir / "converter.py"
+            
+            sample_code = (
+                "def vflag(font: str, char: str):\n"
+                "    if re.match(\n"
+                "        r\"(CM[^R]|MS.M|XY|MT|BL|RM|EU|LA|RS|LINE|LCIRCLE|TeX-|rsfs|txsy|wasy|stmary|.*Mono|.*Code|.*Ital|.*Sym|.*Math)\",\n"
+                "        font,\n"
+                "    ):\n"
+                "        return True\n"
+            )
+            conv_file.write_text(sample_code, encoding="utf-8")
+            
+            from src.pdf2zh_patch import patch_pdf2zh_converter_file
+            res = patch_pdf2zh_converter_file(venv_path)
+            self.assertTrue(res)
+            
+            updated = conv_file.read_text(encoding="utf-8")
+            self.assertIn(".*MathItal", updated)
+            self.assertNotIn(".*Ital|", updated)
+            
+            # Idempotent
+            res_repeat = patch_pdf2zh_converter_file(venv_path)
+            self.assertTrue(res_repeat)
+
+    def test_safe_vfont_pattern(self):
+        import re
+        safe_pattern = r"(CM[^R]|MS.M|XY|MT|BL|RM|EU|LA|RS|LINE|LCIRCLE|TeX-|rsfs|txsy|wasy|stmary|.*Mono|.*Code|.*MathItal|.*Sym|.*Math)"
+        
+        # Text fonts should NOT match
+        self.assertFalse(bool(re.match(safe_pattern, "PalatinoLinotype-Italic")))
+        self.assertFalse(bool(re.match(safe_pattern, "Times-Italic")))
+        self.assertFalse(bool(re.match(safe_pattern, "Helvetica-Italic")))
+        
+        # Math & code fonts SHOULD match
+        self.assertTrue(bool(re.match(safe_pattern, "CMMI10")))
+        self.assertTrue(bool(re.match(safe_pattern, "CambriaMath")))
+        self.assertTrue(bool(re.match(safe_pattern, "MSAM10")))
+        self.assertTrue(bool(re.match(safe_pattern, "Courier-Mono")))
+        self.assertTrue(bool(re.match(safe_pattern, "StandardSymbol")))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,12 +4,13 @@
 
 ## 当前状态（2026-10-24）
 
-- 已完成：彻底攻克 `pdf2zh` 长文本硬编码截断（`text[:1000]`）导致的学术论文译文残缺缺陷，实现 `src/pdf2zh_patch.py` 公式保护自适应分块器与 CJK 智能缝合算法，清理历史 SQLite 缓存库污染；对《Thermal–Hydraulic Performance Comparison of Printed Circuit Heat Exchangers》（MDPI 2025，21页）完成全篇重新翻译与逐章视觉走查，中文字符由 ~7,000 字回升至 10,978 字（+56.8%），摘要、正文与 38 项参考文献 100% 完整交付；全新构建零外部常驻依赖的交互式 Web 桌面工作台（`src/web_app.py` 与 `打开交互应用.command`），原生支持单个 PDF、多文件及整套嵌套文件夹拖拽递归识别转换，支持任务队列、双轨自动识别状态监控及访达联动；全量 205/205 单元测试全绿通过。
+- 已完成：深度排查并彻底攻克 `pdf2zh` 将学术期刊标准正文斜体（如 MDPI `PalatinoLinotype-Italic`）误判为公式变量导致二级小节标题（3.1~3.5）漏译的缺陷，实现 `patch_pdf2zh_converter_file` 与 `vector_pdf_renderer.py` 安全公式字体白名单机制；对《Thermal–Hydraulic Performance Comparison of Printed Circuit Heat Exchangers》（MDPI 2025，21页）完成全量重新翻译与逐章视觉巡检，中文字符由 ~7,000 字升至 11,052 字（+57.9%），摘要、正文、5 大二级标题及 38 项参考文献 100% 完整交付；加固交互式桌面应用（`src/web_app.py` 与 `打开交互应用.command`），修复 HTML5 `readEntries` 100 条批次截断、多层级文件夹同名文件覆盖冲突及 MIME multipart 解析漏洞；全量 211/211 项单元测试全绿通过。
 - 进行中：交互式桌面工作台与双轨自动路由服务全面就绪，支持开箱即用。
-- 下一步：用户可双击运行 `打开交互应用.command`，将任意论文或扫描件文件夹拖入直接转换，或投放 `inbox/` 离线批量处理。
+- 下一步：用户可双击运行 `打开交互应用.command`，将任意 PDF 或多层嵌套文件夹拖入直接识别转换，或投放 `inbox/` 离线批量处理。
 - 备注：保持 100% 本地确定性执行与离线规范，严格遵循原子替换。
 
 ## 近期轮次（最新在上，保留全部）
+- 2026-10-24（斜体小节公式误判攻克、多层文件夹拖拽加固与 100% 汉化交付）：排查出 pdf2zh/converter.py 中公式字体正则包含宽泛 .*Ital 致 MDPI 等期刊 PalatinoLinotype-Italic 二级标题（3.1~3.5）被误判为公式跳过翻译的缺陷；引入 patch_pdf2zh_converter_file 替换为 .*MathItal 并在渲染器中显式传递安全白名单 -f，第 3 章 5 大二级标题 100% 汉化（中文字数达 11,052 字）；加固桌面应用 HTML5 readAllEntries 分页循环、同名文件重命名防覆盖排队及 MIME 协议边界精准处理；全量 211/211 单元测试全绿通过。下一步：双击启动脚本或拖拽文件夹使用。
 - 2026-10-24（pdf2zh 长段截断根因攻克、全篇 100% 保真重构与文件夹拖放交互桌面应用交付）：定位并攻克 pdf2zh 中 `BingTranslator.do_translate` 存在的 `text[:1000]` 暴力截断缺陷，引入 `src/pdf2zh_patch.py` 公式守卫多粒度分块器与 CJK 缝合算法，清理历史截断缓存；实测 21 页 MDPI 论文中文字数跃升至 10,978 字（+56.8%），38 项参考文献全量交付，出具 Section 8 视觉走查通过裁决；构建纯标准库现代拖拽交互桌面应用 `src/web_app.py` 及 `打开交互应用.command`，支持整套文件夹递归拖拽深度解析与双轨转换；新增 11 组测试，全量 205/205 单测全绿。下一步：双击脚本使用或按需批量投递。
 - 2026-10-24（新学术文献随机端到端闭环验证）：用户随机测试新文献，投递《Thermal–Hydraulic Performance Comparison of Printed Circuit Heat Exchangers with Identical-Size and Hybrid-Size Unit Channels》（MDPI Energies 2025，21页）至 inbox/；智能路由器毫秒级命中 vector 分流，调用 pdf2zh 矢量引擎 99 秒完成全篇 21 页翻译与无损排版重构，原子交付中文精译版（1.7MB）与双语对照版（3.4MB）至 outbox/，原件自动归档 processed/；修复 router 独立执行时的相对导入回退；194/194 单测全绿。下一步：按需投放文献使用。
 - 2026-10-24（pdf2zh 现代矢量学术论文集成、双轨智能版面路由器与视觉 QA subagent 独立验收）：完成 pdf2zh 隔离环境搭建（~/.local/venvs/pdf2zh）并修复上游 tmt 3.0.1478 与 bitstring<5 破坏性断裂；实现智能路由器 src/router.py 与 src/vector_pdf_renderer.py，实测证明现代矢量论文走 pdf2zh（无损矢量擦除+双语/单语出版级排版），历史打字机扫描件走 LiteParse 原位双层 HTML（彻底消除位图黑印黑墨坨）；派驻 visual_qa_inspector subagent 像素级走查出具 VISUAL_QA_REPORT.md 正式验收 PASS（矢量流 99.2 分、原位流 96.8 分、盲用 pdf2zh 仅 12.5 分）；Watcher 支持 dual_track_mode: "auto"，全量 194/194 单测全绿。下一步：按需投放文献使用。

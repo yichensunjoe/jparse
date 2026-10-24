@@ -715,6 +715,21 @@ INDEX_HTML = """<!DOCTYPE html>
 
             const filesToUpload = [];
             
+            // Read all entries in a directory (handles Chromium/WebKit 100-entry batch limit)
+            async function readAllEntries(dirReader) {
+                const entries = [];
+                let batch;
+                do {
+                    batch = await new Promise((resolve) => {
+                        dirReader.readEntries((results) => resolve(results || []));
+                    });
+                    if (batch && batch.length > 0) {
+                        entries.push(...batch);
+                    }
+                } while (batch && batch.length > 0);
+                return entries;
+            }
+
             // Recursive reader for entries
             async function traverseEntry(entry, path = "") {
                 if (entry.isFile) {
@@ -727,9 +742,7 @@ INDEX_HTML = """<!DOCTYPE html>
                     }
                 } else if (entry.isDirectory) {
                     const reader = entry.createReader();
-                    const entries = await new Promise((resolve) => {
-                        reader.readEntries((results) => resolve(results || []));
-                    });
+                    const entries = await readAllEntries(reader);
                     for (const child of entries) {
                         await traverseEntry(child, path ? `${path}/${entry.name}` : entry.name);
                     }
@@ -965,8 +978,12 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
                 self.send_error(400, "Expected multipart/form-data")
                 return
 
-            # Simple robust multipart parser for Python standard library
-            boundary = content_type.split("boundary=")[-1].strip()
+            # Robust boundary parser (handles quotes and additional parameters like ; charset=utf-8)
+            b_match = re.search(r'boundary=(?:"([^"]+)"|([^;\s]+))', content_type)
+            if not b_match:
+                self.send_error(400, "Missing boundary in multipart/form-data")
+                return
+            boundary = b_match.group(1) or b_match.group(2)
             content_length = int(self.headers.get("Content-Length", 0))
             raw_data = self.rfile.read(content_length)
 
@@ -978,13 +995,18 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
             service = "bing"
 
             for part in parts:
-                if not part or part == b"--\r\n" or part == b"--":
+                if not part or part == b"--\r\n" or part == b"--" or part.startswith(b"--"):
                     continue
                 header_sep = part.find(b"\r\n\r\n")
                 if header_sep == -1:
                     continue
                 headers_raw = part[:header_sep].decode("utf-8", errors="ignore")
-                body = part[header_sep + 4 :].rstrip(b"\r\n")
+                # Remove exactly the single trailing multipart MIME CRLF delimiter, preserving binary PDF bytes
+                body = part[header_sep + 4 :]
+                if body.endswith(b"\r\n"):
+                    body = body[:-2]
+                elif body.endswith(b"\n"):
+                    body = body[:-1]
 
                 if 'name="file"' in headers_raw:
                     fn_match = re.search(r'filename="([^"]+)"', headers_raw)
@@ -998,13 +1020,27 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
                 elif 'name="service"' in headers_raw:
                     service = body.decode("utf-8", errors="ignore").strip()
 
-            if not filename or not file_bytes:
+            if not filename or file_bytes is None or len(file_bytes) == 0:
                 self.send_error(400, "No file uploaded")
                 return
 
-            # Save uploaded file to inbox/
+            if not filename.lower().endswith(".pdf"):
+                self.send_error(400, "Only PDF files supported")
+                return
+
+            # Save uploaded file to inbox/, disambiguating duplicate names from folder drops
             safe_name = Path(filename).name
+            existing_names = {Path(t["input_path"]).name for t in self.task_manager.get_tasks()}
             save_path = self.task_manager.inbox_dir / safe_name
+            if save_path.exists() or safe_name in existing_names:
+                stem = Path(filename).stem
+                suffix = Path(filename).suffix
+                counter = 1
+                while save_path.exists() or safe_name in existing_names:
+                    safe_name = f"{stem}_{counter}{suffix}"
+                    save_path = self.task_manager.inbox_dir / safe_name
+                    counter += 1
+
             # Atomic save
             tmp_save = self.task_manager.inbox_dir / f".{safe_name}.tmp"
             tmp_save.write_bytes(file_bytes)
@@ -1024,9 +1060,9 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
 
         self.send_error(404, "Not Found")
 
-    def _send_json(self, data: Dict[str, Any]):
+    def _send_json(self, data: Dict[str, Any], status: int = 200):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
-        self.send_response(200)
+        self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()

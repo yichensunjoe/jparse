@@ -287,7 +287,49 @@ def patch_pdf2zh_translator_file(venv_dir: Optional[Path] = None) -> bool:
     return True
 
 
+def patch_pdf2zh_converter_file(venv_dir: Optional[Path] = None) -> bool:
+    """Patch converter.py in pdf2zh to prevent classifying text italic fonts as formulas.
+
+    Replaces .*Ital with .*MathItal in vfont regex so that standard italic headings
+    (e.g., MDPI PalatinoLinotype-Italic, Times-Italic) are properly translated.
+
+    Args:
+        venv_dir: Path to pdf2zh venv directory. Defaults to ~/.local/venvs/pdf2zh.
+
+    Returns:
+        True if patched or already patched, False otherwise.
+    """
+    if venv_dir is None:
+        venv_dir = Path.home() / ".local/venvs/pdf2zh"
+    venv_dir = Path(venv_dir)
+
+    candidate_paths = list(venv_dir.glob("lib/python*/site-packages/pdf2zh/converter.py"))
+    if not candidate_paths:
+        logger.warning("未找到 %s 下的 converter.py", venv_dir)
+        return False
+
+    target_file = candidate_paths[0]
+    content = target_file.read_text(encoding="utf-8")
+
+    if ".*MathItal" in content:
+        logger.debug("pdf2zh converter.py 已经包含 MathItal 补丁")
+        return True
+
+    old_pattern = r"(CM[^R]|MS.M|XY|MT|BL|RM|EU|LA|RS|LINE|LCIRCLE|TeX-|rsfs|txsy|wasy|stmary|.*Mono|.*Code|.*Ital|.*Sym|.*Math)"
+    new_pattern = r"(CM[^R]|MS.M|XY|MT|BL|RM|EU|LA|RS|LINE|LCIRCLE|TeX-|rsfs|txsy|wasy|stmary|.*Mono|.*Code|.*MathItal|.*Sym|.*Math)"
+
+    if old_pattern not in content:
+        logger.warning("未能在 %s 中匹配到默认 formula vfont 正则", target_file)
+        return False
+
+    patched_content = content.replace(old_pattern, new_pattern)
+    target_file.write_text(patched_content, encoding="utf-8")
+    logger.info("已成功对 %s 应用 formula vfont 补丁 (移除 .*Ital 误判)", target_file)
+    return True
+
+
 def ensure_pdf2zh_environment_ready(venv_dir: Optional[Path] = None) -> None:
-    """Ensure pdf2zh environment has clean cache and non-truncating translator."""
+    """Ensure pdf2zh environment has clean cache, non-truncating translator, and fixed font classification."""
     patch_pdf2zh_translator_file(venv_dir)
+    patch_pdf2zh_converter_file(venv_dir)
     clean_truncated_cache()
