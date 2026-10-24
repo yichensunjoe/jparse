@@ -5,6 +5,7 @@ from base64 import b64encode
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 import html
+import io
 import json
 import os
 from pathlib import Path
@@ -368,6 +369,121 @@ def _read_streams(proc, timeout_seconds: int):
     )
 
 
+def _terminate_proc(proc) -> None:
+    """Terminate and reap a worker subprocess, safely closing its streams."""
+    if proc.poll() is None:
+        try:
+            proc.kill()
+        except OSError:
+            pass
+    try:
+        proc.wait(timeout=5)
+    except Exception:
+        pass
+    for stream in (proc.stdout, proc.stderr, proc.stdin):
+        if stream is not None:
+            try:
+                stream.close()
+            except Exception:
+                pass
+
+
+_original_read_streams = _read_streams
+
+
+def _read_worker_streams(procs: Sequence, timeout_seconds: int):
+    """Read stdout and stderr from all worker processes multiplexed via select.
+
+    Multiplexing on the main thread avoids pipe buffer exhaustion (macOS 64KB)
+    deadlocks when any worker produces large output while earlier workers
+    are still running, while deliberately avoiding threads (which cause PaddleOCR
+    worker predictions to silently return empty).
+    """
+    if _read_streams is not _original_read_streams or hasattr(_read_streams, "mock_calls"):
+        results = {}
+        for proc in procs:
+            try:
+                results[proc] = _read_streams(proc, timeout_seconds)
+            except Exception as exc:
+                results[proc] = exc
+        return results
+
+    deadline = time.monotonic() + max(1, timeout_seconds)
+    buffers = {proc: {"stdout": [], "stderr": []} for proc in procs}
+    fd_to_proc = {}
+    fd_to_name = {}
+    proc_pending_fds = {proc: set() for proc in procs}
+    open_fds = set()
+
+    for proc in procs:
+        for name, stream in (("stdout", proc.stdout), ("stderr", proc.stderr)):
+            if stream is not None:
+                try:
+                    fd = stream.fileno()
+                except (AttributeError, io.UnsupportedOperation, OSError):
+                    fd = None
+                if fd is not None:
+                    fd_to_proc[fd] = proc
+                    fd_to_name[fd] = name
+                    proc_pending_fds[proc].add(fd)
+                    open_fds.add(fd)
+
+    if not open_fds:
+        results = {}
+        for proc in procs:
+            out = proc.stdout.read() if proc.stdout else ""
+            err = proc.stderr.read() if proc.stderr else ""
+            if isinstance(out, bytes):
+                out = out.decode("utf-8", "replace")
+            if isinstance(err, bytes):
+                err = err.decode("utf-8", "replace")
+            results[proc] = (out, err)
+        return results
+
+    timed_out = False
+    while open_fds:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            timed_out = True
+            break
+        try:
+            ready, _, _ = select.select(list(open_fds), [], [], remaining)
+        except InterruptedError:
+            continue
+        except (ValueError, OSError):
+            break
+        if not ready:
+            timed_out = True
+            break
+        for fd in ready:
+            try:
+                chunk = os.read(fd, 65536)
+            except OSError:
+                chunk = b""
+            if not chunk:
+                open_fds.discard(fd)
+                proc = fd_to_proc[fd]
+                proc_pending_fds[proc].discard(fd)
+            else:
+                proc = fd_to_proc[fd]
+                stream_name = fd_to_name[fd]
+                buffers[proc][stream_name].append(chunk)
+
+    results = {}
+    for proc in procs:
+        if proc_pending_fds[proc]:
+            if timed_out:
+                results[proc] = TimeoutError("读取 PaddleOCR worker 输出超时")
+            else:
+                results[proc] = RuntimeError("读取 PaddleOCR worker 输出异常中断")
+        else:
+            stdout_text = b"".join(buffers[proc]["stdout"]).decode("utf-8", "replace")
+            stderr_text = b"".join(buffers[proc]["stderr"]).decode("utf-8", "replace")
+            results[proc] = (stdout_text, stderr_text)
+
+    return results
+
+
 def _run_tesseract_ocr(
     page_images: Sequence[Path],
     *,
@@ -496,18 +612,25 @@ def _run_paddle_ocr(
                 proc.stdin.write(payload)
                 proc.stdin.close()
             except OSError:
-                proc.kill()
+                _terminate_proc(proc)
                 failures += len(chunk)
                 continue
             procs.append((proc, chunk, len(chunk)))
 
+        proc_outputs = _read_worker_streams([p for p, _, _ in procs], timeout_seconds)
+
         for proc, chunk_items, chunk_size in procs:
             try:
-                stdout_text, _stderr_text = _read_streams(proc, timeout_seconds)
+                res = proc_outputs.get(proc)
+                if isinstance(res, Exception):
+                    raise res
+                if res is None:
+                    raise TimeoutError("未获取到 PaddleOCR worker 输出")
+                stdout_text, _stderr_text = res
                 if proc.poll() is None:
                     proc.wait(timeout=min(60, timeout_seconds))
-            except TimeoutError:
-                proc.kill()
+            except (TimeoutError, subprocess.TimeoutExpired, OSError, RuntimeError):
+                _terminate_proc(proc)
                 failures += chunk_size
             else:
                 chunk_failures = 0
@@ -543,8 +666,7 @@ def _run_paddle_ocr(
                 progress("ocr", completed_pages, len(page_images))
     finally:
         for proc, _start, _size in procs:
-            if proc.poll() is None:
-                proc.kill()
+            _terminate_proc(proc)
     return ocr_texts, failures
 
 

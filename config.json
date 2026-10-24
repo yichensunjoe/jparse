@@ -28,5 +28,12 @@
   "required_lit_version": "2.4.0",
   "ocr_engine": "paddleocr",
   "paddleocr_python": "/Users/joe/.local/venvs/paddleocr/bin/python",
-  "paddleocr_workers": 16
+  "paddleocr_workers": 16,
+  "translate_literature": false,
+  "translation_model_dir": "assets/models/translation",
+  "translation_batch_size": 32,
+  "translation_beam_size": 4,
+  "translation_bilingual": false,
+  "dual_track_mode": "auto",
+  "pdf2zh_service": "bing"
 }

@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -113,6 +114,42 @@ class WatcherTests(unittest.TestCase):
         self.assertTrue((self.root / "processed" / "report.pdf").is_file())
         self.assertFalse((self.root / "inbox" / "report.pdf").exists())
         self.assertFalse(any(self.root.joinpath("processing").iterdir()))
+
+    def test_literature_translation_pipeline_produces_zh_outputs(self):
+        config = self.make_config("digital")
+        test_model_dir = self.root / "assets" / "models" / "translation"
+        test_model_dir.mkdir(parents=True, exist_ok=True)
+        for req_f in ("model.bin", "source.spm", "target.spm"):
+            (test_model_dir / req_f).write_text("dummy", encoding="utf-8")
+
+        raw_config = json.loads((self.root / "config.json").read_text(encoding="utf-8"))
+        raw_config["translate_literature"] = True
+        raw_config["translation_model_dir"] = "assets/models/translation"
+        (self.root / "config.json").write_text(json.dumps(raw_config), encoding="utf-8")
+        config = Config(self.root / "config.json")
+
+        def fake_translate(source_md, **kwargs):
+            out_md = source_md.parent / f"{source_md.stem}.zh.md"
+            out_html = source_md.parent / f"{source_md.stem}.zh.html"
+            out_md.write_text("# 译文\n\n正文", encoding="utf-8")
+            out_html.write_text("<!doctype html><html><body>译文</body></html>", encoding="utf-8")
+            return out_md, out_html
+
+        self.drop_pdf()
+        with patch("src.watcher.translate_document_file", side_effect=fake_translate):
+            Watcher(config, self.logger).run_once()
+
+        self.assertTrue((self.root / "outbox" / "report.html").is_file())
+        self.assertTrue((self.root / "outbox" / "report.md").is_file())
+        self.assertTrue((self.root / "outbox" / "report.zh.md").is_file())
+        self.assertTrue((self.root / "outbox" / "report.zh.html").is_file())
+        self.assertTrue((self.root / "processed" / "report.pdf").is_file())
+        self.assertFalse(any(self.root.joinpath("processing").iterdir()))
+
+        zh_md = (self.root / "outbox" / "report.zh.md").read_text(encoding="utf-8")
+        self.assertTrue(len(zh_md) > 0)
+        zh_html = (self.root / "outbox" / "report.zh.html").read_text(encoding="utf-8")
+        self.assertIn("<!doctype html>", zh_html)
 
     def test_sparse_text_falls_back_to_ocr(self):
         config = self.make_config("fallback")
@@ -325,6 +362,26 @@ The Next Section
         self.assertIn("synthetic failure", error.read_text(encoding="utf-8"))
         self.assertFalse((self.root / "outbox" / "report.html").exists())
         self.assertFalse((self.root / "outbox" / "report.md").exists())
+
+    def test_failure_cleans_up_partial_files_with_special_characters_in_filename(self):
+        config = self.make_config("fail")
+        self.drop_pdf("report[2026].pdf")
+        partial_file = self.root / "processing" / ".report[2026].noocr.md.partial"
+        partial_file.write_text("temporary data", encoding="utf-8")
+        partial_dir = self.root / "processing" / ".report[2026].noocr.images.partial"
+        partial_dir.mkdir(parents=True, exist_ok=True)
+        (partial_dir / "img1.png").write_bytes(b"dummy")
+
+        # Unrelated partial file belonging to another stem should NOT be touched
+        unrelated_partial = self.root / "processing" / ".other.noocr.md.partial"
+        unrelated_partial.write_text("keep me", encoding="utf-8")
+
+        Watcher(config, self.logger).run_once()
+
+        self.assertTrue((self.root / "failed" / "report[2026].pdf").is_file())
+        self.assertFalse(partial_file.exists())
+        self.assertFalse(partial_dir.exists())
+        self.assertTrue(unrelated_partial.exists())
 
     def test_duplicate_filename_gets_a_non_destructive_suffix(self):
         config = self.make_config("digital")

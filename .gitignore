@@ -14,6 +14,8 @@ logs/
 dist/
 build/
 .reasonix/
+.agents/
+.freebuff/
 .claude/
 .playwright-cli/
 .pnpm-store/
@@ -24,3 +26,11 @@ processed/
 outbox/
 inbox/
 failed/
+work/
+assets/models/*
+!assets/models/README.md
+!assets/models/.gitkeep
+tests/artifacts/pdf2zh_test/
+tests/artifacts/pdf2zh_modern_test/
+tests/artifacts/en13_preview/
+tests/artifacts/html_insitu_test/

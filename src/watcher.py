@@ -27,6 +27,7 @@ try:
         normalize_table_cell_spacing,
         repair_markdown_tables,
     )
+    from .translator import TranslationEngine, translate_document_file
 except ImportError:
     from html_renderer import render_markdown_file
     from markdown_reflow import reflow_markdown_document
@@ -36,6 +37,7 @@ except ImportError:
         normalize_table_cell_spacing,
         repair_markdown_tables,
     )
+    from translator import TranslationEngine, translate_document_file
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -111,16 +113,21 @@ class Config:
         )
         self.ocr_engine = str(raw.get("ocr_engine", "paddleocr")).lower()
         paddleocr_python = raw.get("paddleocr_python")
-        self.paddleocr_python = (
-            str(Path(paddleocr_python).expanduser().resolve())
-            if paddleocr_python
-            else None
-        )
+        if paddleocr_python:
+            path_obj = Path(paddleocr_python).expanduser()
+            if not path_obj.is_absolute():
+                path_obj = self.root / path_obj
+            self.paddleocr_python = os.path.abspath(str(path_obj))
+        else:
+            self.paddleocr_python = None
         self.paddleocr_workers = int(raw.get("paddleocr_workers", 16))
 
         lit_value = str(raw.get("lit_binary", "lit"))
         if "/" in lit_value:
-            self.lit_binary = str(Path(lit_value).expanduser().resolve())
+            path_obj = Path(lit_value).expanduser()
+            if not path_obj.is_absolute():
+                path_obj = self.root / path_obj
+            self.lit_binary = os.path.abspath(str(path_obj))
         else:
             self.lit_binary = shutil.which(lit_value) or lit_value
 
@@ -152,6 +159,29 @@ class Config:
             raise ConfigError("ocr_engine 仅支持 tesseract 或 paddleocr")
         if self.paddleocr_workers < 1:
             raise ConfigError("paddleocr_workers 不得小于 1")
+
+        self.translate_literature = bool(raw.get("translate_literature", False))
+        translation_model = raw.get("translation_model_dir", "assets/models/translation")
+        self.translation_model_dir = (
+            _project_path(self.root, translation_model, "translation_model_dir")
+            if translation_model else None
+        )
+        self.translation_batch_size = int(raw.get("translation_batch_size", 32))
+        self.translation_beam_size = int(raw.get("translation_beam_size", 4))
+        self.translation_bilingual = bool(raw.get("translation_bilingual", False))
+        if not isinstance(self.translate_literature, bool):
+            raise ConfigError("translate_literature 必须为 true 或 false")
+        if not isinstance(self.translation_bilingual, bool):
+            raise ConfigError("translation_bilingual 必须为 true 或 false")
+        if self.translation_batch_size < 1:
+            raise ConfigError("translation_batch_size 不得小于 1")
+        if self.translation_beam_size < 1:
+            raise ConfigError("translation_beam_size 不得小于 1")
+
+        self.dual_track_mode = str(raw.get("dual_track_mode", "disabled")).lower()
+        if self.dual_track_mode not in {"disabled", "auto", "vector", "scanned"}:
+            raise ConfigError("dual_track_mode 仅支持 disabled、auto、vector 或 scanned")
+        self.pdf2zh_service = str(raw.get("pdf2zh_service", "bing")).lower()
 
     @property
     def output_extension(self) -> str:
@@ -264,6 +294,13 @@ def health_check(config: Config) -> str:
             and not config.tesseract_binary
         ):
             raise ConfigError("扫描书辅助文字层缺少 Tesseract")
+
+    if config.translate_literature:
+        engine = TranslationEngine(config.translation_model_dir)
+        ok, reason = engine.is_available()
+        if not ok:
+            raise ConfigError(reason)
+
     return version_output
 
 
@@ -752,6 +789,8 @@ class Watcher:
             raise
         selected.unlink(missing_ok=True)
         remove_path(image_dir)
+        if self.config.translate_literature and self.config.keep_markdown:
+            self._translate_output(source, markdown_output, assets_output if has_assets else None)
 
     def _publish_scanned(self, source: Path, output: Path, page_count: int):
         rendered = self.config.processing / (
@@ -826,6 +865,35 @@ class Watcher:
             result.markdown_bytes / (1024 * 1024),
             result.elapsed_seconds,
         )
+        if self.config.translate_literature and self.config.keep_markdown:
+            self._translate_output(source, markdown_output, None)
+
+    def _translate_output(
+        self,
+        source: Path,
+        markdown_output: Path,
+        image_dir: Optional[Path],
+    ):
+        if not self.config.translate_literature:
+            return
+        try:
+            self.logger.info("开始本地科技文献离线翻译：%s", source.name)
+            t0 = time.time()
+            translate_document_file(
+                source_md=markdown_output,
+                model_dir=self.config.translation_model_dir,
+                bilingual=self.config.translation_bilingual,
+                image_base_dir=image_dir,
+                batch_size=self.config.translation_batch_size,
+                beam_size=self.config.translation_beam_size,
+            )
+            self.logger.info(
+                "本地文献翻译完成（耗时 %.1f 秒）：%s",
+                time.time() - t0,
+                source.name,
+            )
+        except Exception as exc:
+            self.logger.warning("本地文献翻译失败（不影响主成果物）：%s：%s", source.name, exc)
 
     def _archive_success(self, source: Path) -> Path:
         destination = unique_path(self.config.processed, source.name)
@@ -850,6 +918,33 @@ class Watcher:
             archived = self._archive_success(source)
             self.logger.warning("检测到已完成输出，仅恢复归档：%s", archived.name)
             return
+
+        if self.config.dual_track_mode != "disabled":
+            try:
+                from .router import route_and_process_pdf
+            except ImportError:
+                from router import route_and_process_pdf
+            try:
+                outputs = route_and_process_pdf(
+                    pdf_path=source,
+                    outbox_dir=self.config.outbox,
+                    config={
+                        "force_pipeline": self.config.dual_track_mode,
+                        "pdf2zh_service": self.config.pdf2zh_service,
+                    },
+                )
+                archived = self._archive_success(source)
+                output_names = ", ".join(p.name for p in outputs)
+                self.logger.info("双轨智能识别完成：%s -> %s", archived.name, output_names)
+                return
+            except Exception as exc:
+                self._cleanup_partials(source.stem)
+                try:
+                    failed = self._archive_failure(source, str(exc))
+                    self.logger.error("双轨识别失败：%s：%s", failed.name, exc)
+                except FileNotFoundError:
+                    self.logger.error("双轨处理失败且原文件已不存在：%s", exc)
+                return
         try:
             selected, image_dir, use_ocr, scan_page_count = self._parse(source)
             if scan_page_count:
@@ -865,13 +960,21 @@ class Watcher:
                 output_names += " + " + source.stem + ".md"
             self.logger.info("识别完成：%s -> %s", archived.name, output_names)
         except Exception as exc:
-            for partial in self.config.processing.glob(".%s.*.partial" % source.stem):
-                remove_path(partial)
+            self._cleanup_partials(source.stem)
             try:
                 failed = self._archive_failure(source, str(exc))
                 self.logger.error("识别失败：%s：%s", failed.name, exc)
             except FileNotFoundError:
                 self.logger.error("处理失败且原文件已不存在：%s", exc)
+
+    def _cleanup_partials(self, stem: str):
+        prefix = ".%s." % stem
+        try:
+            for partial in self.config.processing.iterdir():
+                if partial.name.startswith(prefix) and partial.name.endswith(".partial"):
+                    remove_path(partial)
+        except OSError as exc:
+            self.logger.warning("清理临时文件失败：%s", exc)
 
     def recover_processing(self):
         for source in sorted(self.config.processing.iterdir(), key=lambda path: path.name):
