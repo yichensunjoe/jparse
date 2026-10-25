@@ -98,7 +98,7 @@ def route_and_process_pdf(
     force_mode = cfg.get("force_pipeline", "auto").lower()
     if force_mode in ("vector", "modern"):
         doc_type = "vector"
-    elif force_mode in ("scanned", "historical", "insitu"):
+    elif force_mode in ("scanned", "historical", "insitu", "opendataloader"):
         doc_type = "scanned"
     else:
         doc_type = probe_pdf_document_type(pdf_path)
@@ -118,12 +118,19 @@ def route_and_process_pdf(
             thread=thread,
         )
     else:
-        # Track B: Historical Scanned Literature -> LiteParse In-Situ Dual-Layer HTML
+        # Track B: In-Situ Dual-Layer HTML (OpenDataLoader-PDF upstream engine)
+        if force_mode == "opendataloader":
+            extractor_engine = "opendataloader"
+        elif force_mode == "scanned" and "upstream_extractor" not in cfg:
+            extractor_engine = "liteparse"
+        else:
+            extractor_engine = cfg.get("upstream_extractor", "opendataloader")
         html_out = outbox_dir / f"{pdf_path.stem}.原位双层版.html"
         tmp_html = outbox_dir / f".{pdf_path.stem}.原位双层版.html.tmp"
         res_path = process_pdf_to_insitu_html(
             pdf_path=pdf_path,
             output_html_path=tmp_html,
+            extractor_engine=extractor_engine,
         )
         tmp_html.replace(html_out)
         sz = html_out.stat().st_size if html_out.exists() else 0

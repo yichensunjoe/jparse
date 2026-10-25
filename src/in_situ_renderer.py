@@ -613,10 +613,17 @@ def layout_page_blocks(
             if h_ov > 0.35 * min(bw, fn_w) or (h_ov > 25.0 and bw > 80.0):
                 max_col_bottom = min(max_col_bottom, fn_y - 8.0)
 
-        # Compute initial typography fitting
-        fs, fw, lh, sp = compute_block_typography(blk, page_w, page_h, target_h=bh)
-        lines = estimate_rendered_lines(zh_text, fs, bw)
-        est_h = round(lines * fs * lh + 2.5, 2)
+        is_table = bool(blk.get("is_table", False))
+        is_formula = bool(blk.get("is_formula", False))
+
+        if is_table:
+            fs, fw, lh, sp = 9.5, 400, 1.4, "normal"
+            est_h = max(bh, 24.0)
+        else:
+            # Compute initial typography fitting
+            fs, fw, lh, sp = compute_block_typography(blk, page_w, page_h, target_h=bh)
+            lines = estimate_rendered_lines(zh_text, fs, bw)
+            est_h = round(lines * fs * lh + 2.5, 2)
 
         # Cascade against previous placed blocks in the same column/stream
         cur_y = by
@@ -628,7 +635,7 @@ def layout_page_blocks(
                     cur_y = max(cur_y, min_y)
 
         # Boundary check against footnote ceiling
-        if cur_y + est_h > max_col_bottom:
+        if not is_table and cur_y + est_h > max_col_bottom:
             avail = max(18.0, max_col_bottom - cur_y)
             fs, fw, lh, sp = compute_block_typography(blk, page_w, page_h, target_h=avail)
             lines = estimate_rendered_lines(zh_text, fs, bw)
@@ -650,6 +657,8 @@ def layout_page_blocks(
             "align": blk.get("align", "left"),
             "lines_count": blk.get("lines_count", 1),
             "is_footnote": False,
+            "is_table": is_table,
+            "is_formula": is_formula,
         })
 
     # Place footnotes ensuring no collision with placed blocks above
@@ -895,8 +904,46 @@ def render_insitu_html_document(
       box-shadow: 0 0 0 1px rgba(100, 116, 139, 0.3);
     }}
 
+    /* Table & Formula In-Situ Styles */
+    .table-block {{
+      position: absolute;
+      background: rgba(255, 255, 255, 0.96);
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      overflow-x: auto;
+      z-index: 5;
+      transition: background 0.15s, box-shadow 0.15s;
+    }}
+    .table-block:hover {{
+      box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.4);
+    }}
+    .insitu-table {{
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9.5pt;
+      line-height: 1.4;
+    }}
+    .insitu-table th, .insitu-table td {{
+      border: 1px solid #cbd5e1;
+      padding: 4px 6px;
+      text-align: left;
+    }}
+    .insitu-table th {{
+      background: #f1f5f9;
+      font-weight: 600;
+      color: #1e293b;
+    }}
+    .formula-block {{
+      font-family: 'Cambria Math', 'Times New Roman', serif;
+      font-style: italic;
+      background: rgba(248, 250, 252, 0.85);
+      border-radius: 3px;
+    }}
+
     /* Tooltip */
-    .text-block[data-en]::after {{
+    .text-block[data-en]::after,
+    .table-block[data-en]::after {{
       content: attr(data-en);
       position: absolute;
       bottom: calc(100% + 6px);
@@ -915,9 +962,10 @@ def render_insitu_html_document(
       visibility: hidden;
       transition: opacity 0.15s ease;
       z-index: 999;
-      white-space: normal;
+      white-space: pre-wrap;
     }}
-    .text-block:hover::after {{
+    .text-block:hover::after,
+    .table-block:hover::after {{
       opacity: 1;
       visibility: visible;
     }}
@@ -974,23 +1022,31 @@ def render_insitu_html_document(
   <main class="viewport">
 """)
 
-    for p_idx, (p_data, p_img_uri, p_trans) in enumerate(zip(pages_data, page_data_uris, translated_pages), start=1):
+    for p_idx, p_data in enumerate(pages_data, start=1):
         pw = float(p_data["width"])
         ph = float(p_data["height"])
+        p_page_num = int(p_data.get("page", p_idx))
+        p_trans = translated_pages[p_idx - 1] if p_idx - 1 < len(translated_pages) else []
+
+        p_img_uri = ""
+        if 0 <= p_page_num - 1 < len(page_data_uris):
+            p_img_uri = page_data_uris[p_page_num - 1]
+        elif 0 <= p_idx - 1 < len(page_data_uris):
+            p_img_uri = page_data_uris[p_idx - 1]
 
         html_parts.append(f"""
-    <!-- Page {p_idx} Pair -->
-    <div class="page-pair" id="pair-{p_idx}">
+    <!-- Page {p_page_num} Pair -->
+    <div class="page-pair" id="pair-{p_page_num}">
       <!-- Left: Original Scan in Split Mode -->
       <section class="page-side scan-side" style="width: {pw}pt; height: {ph}pt;">
-        <div class="page-header">原文扫描件 · 第 {p_idx} / {len(pages_data)} 页</div>
-        <img src="{p_img_uri}" alt="Page {p_idx} Original Scan" style="width: 100%; height: 100%; object-fit: contain;">
+        <div class="page-header">原文扫描件 · 第 {p_page_num} / {len(pages_data)} 页</div>
+        <img src="{p_img_uri}" alt="Page {p_page_num} Original Scan" style="width: 100%; height: 100%; object-fit: contain;">
       </section>
 
       <!-- Right: In-Situ Translated Editable Page -->
-      <section class="page-side pdf-page" id="page-{p_idx}" style="width: {pw}pt; height: {ph}pt;">
-        <div class="page-header">原位可编辑译文 · 第 {p_idx} / {len(pages_data)} 页</div>
-        <img class="page-scan" src="{p_img_uri}" alt="Page {p_idx} Background Scan">
+      <section class="page-side pdf-page" id="page-{p_page_num}" style="width: {pw}pt; height: {ph}pt;">
+        <div class="page-header">原位可编辑译文 · 第 {p_page_num} / {len(pages_data)} 页</div>
+        <img class="page-scan" src="{p_img_uri}" alt="Page {p_page_num} Background Scan">
         <div class="text-layer">
 """)
 
@@ -1007,24 +1063,36 @@ def render_insitu_html_document(
             align = blk.get("align", "left")
             orig_text = blk["orig_text"]
             zh_text = blk["zh_text"]
+            is_table = bool(blk.get("is_table", False))
+            is_formula = bool(blk.get("is_formula", False))
 
             left_pct = round(bx / pw * 100.0, 3)
             top_pct = round(by / ph * 100.0, 3)
             width_pct = round(bw / pw * 100.0, 3)
             min_height_pct = round(bh / ph * 100.0, 3)
 
-            lines_count = blk.get("lines_count", 1)
-
-            # Prevent text clipping and collision for tight single-line list entries
-            if lines_count == 1 and bw < pw * 0.45 and not orig_text.rstrip().endswith("-"):
-                nowrap_css = "white-space: nowrap; overflow: visible; display: flex; align-items: center;"
-            else:
-                nowrap_css = ""
-
             escaped_orig = html.escape(orig_text)
-            escaped_zh = html.escape(zh_text)
 
-            html_parts.append(f"""        <div class="text-block"
+            if is_table:
+                table_content = zh_text if "<table" in zh_text else f'<div style="padding: 6px;">{html.escape(zh_text)}</div>'
+                html_parts.append(f"""        <div class="table-block"
+             data-en="{escaped_orig}"
+             style="left: {left_pct}%; top: {top_pct}%; width: {width_pct}%; min-height: {min_height_pct}%;">
+          {table_content}
+        </div>
+""")
+            else:
+                lines_count = blk.get("lines_count", 1)
+                # Prevent text clipping and collision for tight single-line list entries
+                if lines_count == 1 and bw < pw * 0.45 and not orig_text.rstrip().endswith("-"):
+                    nowrap_css = "white-space: nowrap; overflow: visible; display: flex; align-items: center;"
+                else:
+                    nowrap_css = ""
+
+                extra_cls = " formula-block" if is_formula else ""
+                escaped_zh = html.escape(zh_text)
+
+                html_parts.append(f"""        <div class="text-block{extra_cls}"
              contenteditable="true"
              data-en="{escaped_orig}"
              style="left: {left_pct}%; top: {top_pct}%; width: {width_pct}%; min-height: {min_height_pct}%; font-size: {render_font_pt}pt; font-weight: {font_weight}; line-height: {line_height}; letter-spacing: {letter_spacing}; text-align: {align}; {nowrap_css}">
@@ -1252,11 +1320,12 @@ def apply_in_situ_glossary(text: str) -> str:
 def process_pdf_to_insitu_html(
     pdf_path: Path,
     output_html_path: Path,
+    extractor_engine: str = "opendataloader",
     lit_binary: str = "/Users/joe/.local/share/agent-tools/bin/lit",
     model_dir: str = "assets/models/translation",
     dpi: int = 150,
 ) -> Path:
-    """Full pipeline: PDF -> lit json + pdftoppm -> cluster -> translate -> In-Situ HTML."""
+    """Full pipeline: PDF -> opendataloader (or lit) -> cluster/order -> translate -> In-Situ HTML."""
     start_time = time.time()
     pdf_path = Path(pdf_path).resolve()
     output_html_path = Path(output_html_path).resolve()
@@ -1266,57 +1335,143 @@ def process_pdf_to_insitu_html(
         json_path = tmp_dir / "layout.json"
         img_prefix = tmp_dir / "page"
 
-        # 1. Parse PDF layout coordinates with lit
-        logger.info("正在提取 PDF 2D 坐标版面...")
-        lit_cmd = [
-            lit_binary, "parse", str(pdf_path),
-            "--format", "json",
-            "--output", str(json_path),
-            "--dpi", str(dpi),
-            "-q",
-        ]
-        res = subprocess.run(lit_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if res.returncode != 0 or not json_path.exists():
-            raise RuntimeError(f"LiteParse 提取失败: {res.stderr}")
+        # 1. Parse PDF layout coordinates with OpenDataLoader-PDF (or LiteParse fallback)
+        pages_data = []
+        if extractor_engine == "opendataloader":
+            try:
+                from .opendataloader_extractor import extract_pdf_pages_data
+            except ImportError:
+                from opendataloader_extractor import extract_pdf_pages_data
 
-        doc_data = json.loads(json_path.read_text(encoding="utf-8"))
-        pages_data = doc_data.get("pages", [])
+            try:
+                logger.info("正在使用 OpenDataLoader-PDF 引擎提取版面与 XY-Cut++ 阅读顺序...")
+                doc_data = extract_pdf_pages_data(pdf_path, image_output="off")
+                pages_data = doc_data.get("pages", [])
+                logger.info("OpenDataLoader-PDF 提取成功，共 %d 页", len(pages_data))
+            except Exception as e:
+                logger.warning("OpenDataLoader-PDF 提取异常 (%s)，回退至 LiteParse...", e)
+                pages_data = []
+
         if not pages_data:
-            raise RuntimeError("LiteParse 未提取到任何有效页面数据")
+            logger.info("正在提取 PDF 2D 坐标版面 (LiteParse)...")
+            lit_cmd = [
+                lit_binary, "parse", str(pdf_path),
+                "--format", "json",
+                "--output", str(json_path),
+                "--dpi", str(dpi),
+                "-q",
+            ]
+            res = subprocess.run(lit_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if res.returncode != 0 or not json_path.exists():
+                raise RuntimeError(f"版面提取失败: {res.stderr}")
 
-        # 2. Render 150 DPI page scans with pdftoppm
+            doc_data = json.loads(json_path.read_text(encoding="utf-8"))
+            pages_data = doc_data.get("pages", [])
+            if not pages_data:
+                raise RuntimeError("未提取到任何有效页面数据")
+
+        # 2. Render 150 DPI page scans
         logger.info("正在渲染高保真页面底图...")
-        ppm_cmd = ["pdftoppm", "-jpeg", "-r", str(dpi), str(pdf_path), str(img_prefix)]
-        res_ppm = subprocess.run(ppm_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        if res_ppm.returncode != 0:
-            raise RuntimeError(f"pdftoppm 渲染失败: {res_ppm.stderr}")
+        page_imgs = []
+        try:
+            ppm_cmd = ["pdftoppm", "-jpeg", "-r", str(dpi), str(pdf_path), str(img_prefix)]
+            res_ppm = subprocess.run(ppm_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            if res_ppm.returncode == 0:
+                page_imgs = sorted(tmp_dir.glob("page-*.jpg"))
+        except Exception:
+            pass
 
-        # Collect rendered page images
-        page_imgs = sorted(tmp_dir.glob("page-*.jpg"))
+        if not page_imgs:
+            try:
+                import fitz
+                doc = fitz.open(pdf_path)
+                for i, p in enumerate(doc, start=1):
+                    pix = p.get_pixmap(dpi=dpi)
+                    img_file = tmp_dir / f"page-{i:03d}.jpg"
+                    pix.save(str(img_file))
+                page_imgs = sorted(tmp_dir.glob("page-*.jpg"))
+                doc.close()
+            except Exception as e:
+                logger.warning("页面底图生成失败: %s", e)
 
-        # 3. Cluster into visual paragraphs
-        logger.info("正在聚合并规整原位视觉段落...")
+        # 3. Cluster / Organize visual paragraphs and structured elements
+        logger.info("正在组织原位视觉段落与结构元素...")
         all_pages_paragraphs = []
         all_sents = []
         para_sent_map = []  # list of (start_idx, count) for each paragraph
 
         for p in pages_data:
             pw = float(p["width"])
-            blocks = cluster_page_text_items(p)
-            paras = merge_smart_paragraphs(blocks, pw)
-            all_pages_paragraphs.append(paras)
+            ph = float(p["height"])
+
+            if p.get("structured_elements"):
+                paras = []
+                for el in p["structured_elements"]:
+                    txt = str(el.get("text", "")).strip()
+                    if not txt:
+                        continue
+                    is_table = bool(el.get("is_table", False))
+                    is_formula = bool(el.get("is_formula", False))
+                    is_heading = bool(el.get("is_heading", False))
+                    heading_lvl = int(el.get("heading_level", 0))
+
+                    paras.append({
+                        "text": txt,
+                        "x": float(el["x"]),
+                        "y": float(el["y"]),
+                        "w": float(el["w"]),
+                        "h": float(el["h"]),
+                        "font_size": float(el.get("font_size", 10.0)),
+                        "align": "center" if (is_heading and heading_lvl == 1) else "left",
+                        "lines_count": max(1, int(round(float(el["h"]) / max(float(el.get("font_size", 10.0)), 8.0)))),
+                        "is_table": is_table,
+                        "table_data": el.get("table_data"),
+                        "table_html": el.get("table_html", ""),
+                        "table_markdown": el.get("table_markdown", ""),
+                        "is_formula": is_formula,
+                        "is_heading": is_heading,
+                        "heading_level": heading_lvl,
+                    })
+                all_pages_paragraphs.append(paras)
+            else:
+                blocks = cluster_page_text_items(p)
+                paras = merge_smart_paragraphs(blocks, pw)
+                all_pages_paragraphs.append(paras)
+
             for pr in paras:
-                cl = clean_historical_ocr_text(pr["text"])
-                sents = split_sentences(cl)
-                if not sents:
-                    sents = [cl]
-                para_sent_map.append((len(all_sents), len(sents)))
-                all_sents.extend(sents)
+                if pr.get("is_formula"):
+                    para_sent_map.append((len(all_sents), 0))
+                elif pr.get("is_table"):
+                    tbl = pr.get("table_data")
+                    if tbl and tbl.get("rows"):
+                        cell_texts = []
+                        for row in tbl["rows"]:
+                            for cell in row:
+                                ctxt = cell.get("text", "").strip()
+                                if ctxt and not ctxt.isdigit() and len(ctxt) > 1:
+                                    cell_texts.append(ctxt)
+                        if cell_texts:
+                            para_sent_map.append((len(all_sents), len(cell_texts)))
+                            all_sents.extend(cell_texts)
+                        else:
+                            para_sent_map.append((len(all_sents), 0))
+                    else:
+                        para_sent_map.append((len(all_sents), 0))
+                else:
+                    cl = clean_historical_ocr_text(pr["text"])
+                    sents = split_sentences(cl)
+                    if not sents:
+                        sents = [cl]
+                    para_sent_map.append((len(all_sents), len(sents)))
+                    all_sents.extend(sents)
 
         # 4. Batch translate using local TranslationEngine
-        logger.info("正在调用本地离线翻译引擎进行高精度句子级并行翻译 (共 %d 个句子)...", len(all_sents))
-        engine = TranslationEngine(model_dir)
-        tr_sents = engine.translate_sentences(all_sents)
+        if all_sents:
+            logger.info("正在调用本地离线翻译引擎进行高精度句子级并行翻译 (共 %d 个句子)...", len(all_sents))
+            engine = TranslationEngine(model_dir)
+            tr_sents = engine.translate_sentences(all_sents)
+        else:
+            tr_sents = []
 
         # Re-pack translations into pages
         para_idx = 0
@@ -1326,12 +1481,51 @@ def process_pdf_to_insitu_html(
             for pr in paras:
                 start_i, count_i = para_sent_map[para_idx]
                 para_idx += 1
-                para_tr_sents = tr_sents[start_i : start_i + count_i]
-                joined_zh = "".join(
-                    s if s.endswith(("。", "；", "！", "？", ":", "：", "，", ",")) else s + " "
-                    for s in para_tr_sents
-                ).strip()
-                zh_normalized = apply_in_situ_glossary(joined_zh)
+
+                if pr.get("is_formula"):
+                    zh_normalized = pr["text"]
+                elif pr.get("is_table"):
+                    tbl = pr.get("table_data")
+                    if tbl and tbl.get("rows") and count_i > 0:
+                        tr_cells = tr_sents[start_i : start_i + count_i]
+                        tr_map = {}
+                        c_idx = 0
+                        for row in tbl["rows"]:
+                            for cell in row:
+                                ctxt = cell.get("text", "").strip()
+                                if ctxt and not ctxt.isdigit() and len(ctxt) > 1 and c_idx < len(tr_cells):
+                                    tr_map[ctxt] = tr_cells[c_idx]
+                                    c_idx += 1
+                        t_parts = ['<table class="insitu-table">']
+                        for row in tbl["rows"]:
+                            t_parts.append("  <tr>")
+                            for cell in row:
+                                tag = "th" if cell.get("is_header") else "td"
+                                attrs = []
+                                r_span = int(cell.get("row_span") or 1)
+                                c_span = int(cell.get("col_span") or 1)
+                                if r_span > 1:
+                                    attrs.append(f'rowspan="{r_span}"')
+                                if c_span > 1:
+                                    attrs.append(f'colspan="{c_span}"')
+                                attr_str = (" " + " ".join(attrs)) if attrs else ""
+                                clean_c = cell.get("text", "").strip()
+                                zh_c = tr_map.get(clean_c, cell.get("text", ""))
+                                zh_c = apply_in_situ_glossary(zh_c)
+                                t_parts.append(f"    <{tag}{attr_str}>{html.escape(zh_c)}</{tag}>")
+                            t_parts.append("  </tr>")
+                        t_parts.append("</table>")
+                        zh_normalized = "\n".join(t_parts)
+                    else:
+                        zh_normalized = pr.get("table_html") or pr["text"]
+                else:
+                    para_tr_sents = tr_sents[start_i : start_i + count_i]
+                    joined_zh = "".join(
+                        s if s.endswith(("。", "；", "！", "？", ":", "：", "，", ",")) else s + " "
+                        for s in para_tr_sents
+                    ).strip()
+                    zh_normalized = apply_in_situ_glossary(joined_zh)
+
                 p_blocks.append({
                     "orig_text": pr["text"],
                     "zh_text": zh_normalized,
@@ -1342,6 +1536,8 @@ def process_pdf_to_insitu_html(
                     "font_size": pr["font_size"],
                     "align": pr["align"],
                     "lines_count": pr.get("lines_count", 1),
+                    "is_table": pr.get("is_table", False),
+                    "is_formula": pr.get("is_formula", False),
                 })
             translated_pages.append(p_blocks)
 

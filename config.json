@@ -35,5 +35,6 @@
   "translation_beam_size": 4,
   "translation_bilingual": false,
   "dual_track_mode": "auto",
-  "pdf2zh_service": "bing"
+  "pdf2zh_service": "bing",
+  "upstream_extractor": "opendataloader"
 }

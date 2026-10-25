@@ -131,6 +131,8 @@ class Config:
         else:
             self.lit_binary = shutil.which(lit_value) or lit_value
 
+        self.upstream_extractor = str(raw.get("upstream_extractor", "opendataloader")).lower()
+
         if self.output_format not in {"html", "markdown", "text"}:
             raise ConfigError("output_format 仅支持 html、markdown 或 text")
         if self.ocr_mode not in {"auto", "always", "never"}:
@@ -229,28 +231,49 @@ def health_check(config: Config) -> str:
     for directory in config.managed_directories:
         directory.mkdir(parents=True, exist_ok=True)
 
+    version_output = ""
+    if getattr(config, "upstream_extractor", "opendataloader") == "opendataloader":
+        try:
+            try:
+                from .opendataloader_extractor import check_opendataloader_available
+            except ImportError:
+                from opendataloader_extractor import check_opendataloader_available
+            od_ok, od_detail = check_opendataloader_available()
+            if od_ok:
+                version_output = f"OpenDataLoader: {od_detail}"
+            elif not Path(config.lit_binary).is_file():
+                raise ConfigError("OpenDataLoader-PDF 引擎不可用：%s" % od_detail)
+        except ConfigError:
+            raise
+        except Exception:
+            pass
+
     lit_path = Path(config.lit_binary)
-    if not lit_path.is_file() or not os.access(str(lit_path), os.X_OK):
+    if lit_path.is_file() and os.access(str(lit_path), os.X_OK):
+        try:
+            result = subprocess.run(
+                [config.lit_binary, "--version"],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                timeout=10,
+            )
+            lit_ver = result.stdout.strip()
+            if config.required_lit_version and config.required_lit_version not in lit_ver:
+                raise ConfigError(
+                    "LiteParse 版本不匹配，期望 %s，实际 %s"
+                    % (config.required_lit_version, lit_ver)
+                )
+            version_output = f"{version_output}; LiteParse: {lit_ver}" if version_output else lit_ver
+        except (OSError, subprocess.SubprocessError) as exc:
+            if getattr(config, "upstream_extractor", "opendataloader") != "opendataloader":
+                raise ConfigError("LiteParse 版本检查失败：%s" % exc) from exc
+    elif getattr(config, "upstream_extractor", "opendataloader") != "opendataloader":
         raise ConfigError("LiteParse 可执行文件不可用：%s" % config.lit_binary)
 
-    try:
-        result = subprocess.run(
-            [config.lit_binary, "--version"],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            timeout=10,
-        )
-    except (OSError, subprocess.SubprocessError) as exc:
-        raise ConfigError("LiteParse 版本检查失败：%s" % exc) from exc
-
-    version_output = result.stdout.strip()
-    if config.required_lit_version and config.required_lit_version not in version_output:
-        raise ConfigError(
-            "LiteParse 版本不匹配，期望 %s，实际 %s"
-            % (config.required_lit_version, version_output)
-        )
+    if not version_output:
+        version_output = "upstream: opendataloader"
 
     if config.ocr_engine == "paddleocr":
         interpreter = (
@@ -931,6 +954,7 @@ class Watcher:
                     config={
                         "force_pipeline": self.config.dual_track_mode,
                         "pdf2zh_service": self.config.pdf2zh_service,
+                        "upstream_extractor": getattr(self.config, "upstream_extractor", "opendataloader"),
                     },
                 )
                 archived = self._archive_success(source)

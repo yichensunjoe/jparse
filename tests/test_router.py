@@ -138,7 +138,7 @@ class TestWatcherDualTrackIntegration(unittest.TestCase):
             mock_route.assert_called_once_with(
                 pdf_path=fake_pdf,
                 outbox_dir=cfg.outbox,
-                config={"force_pipeline": "auto", "pdf2zh_service": "bing"}
+                config={"force_pipeline": "auto", "pdf2zh_service": "bing", "upstream_extractor": "opendataloader"}
             )
             # Original file should be archived into processed
             self.assertFalse(fake_pdf.exists())
