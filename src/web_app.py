@@ -1110,6 +1110,9 @@ def run_server(port: int = 8765, open_browser: bool = True):
 
 
 if __name__ == "__main__":
-    port = int(sys.argv[1]) if len(sys.argv) > 1 else 8765
-    open_b = "--no-open" not in sys.argv
+    port = 8765
+    for arg in sys.argv[1:]:
+        if arg.isdigit():
+            port = int(arg)
+    open_b = "--no-open" not in sys.argv and "--no-browser" not in sys.argv
     run_server(port=port, open_browser=open_b)

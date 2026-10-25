@@ -33,4 +33,6 @@ assets/models/*
 tests/artifacts/pdf2zh_test/
 tests/artifacts/pdf2zh_modern_test/
 tests/artifacts/en13_preview/
+*.app/
+audit_screenshots/
 tests/artifacts/html_insitu_test/
