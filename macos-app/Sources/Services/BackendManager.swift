@@ -124,6 +124,21 @@ public final class BackendManager: ObservableObject {
             "--no-open"
         ]
 
+        // Set enriched PATH and JAVA_HOME environment so child tools (like Java and OpenDataLoader) work seamlessly
+        var env = ProcessInfo.processInfo.environment
+        let extraPaths = [
+            "/Users/joe/.local/bin",
+            "/opt/homebrew/bin",
+            "/opt/homebrew/opt/openjdk/bin",
+            "/usr/local/bin"
+        ]
+        let currentPath = env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
+        env["PATH"] = (extraPaths + [currentPath]).joined(separator: ":")
+        if FileManager.default.fileExists(atPath: "/opt/homebrew/opt/openjdk") {
+            env["JAVA_HOME"] = "/opt/homebrew/opt/openjdk"
+        }
+        proc.environment = env
+
         // Discard stdout/stderr using nullDevice so process never blocks on unread pipe buffers
         proc.standardOutput = FileHandle.nullDevice
         proc.standardError = FileHandle.nullDevice

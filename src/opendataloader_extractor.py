@@ -38,7 +38,7 @@ _CANDIDATE_JAVA_DIRS = [
 
 def ensure_java_environment() -> Optional[str]:
     """Ensure a functional Java runtime is discoverable in PATH and JAVA_HOME."""
-    # Test if java currently in PATH works
+    # Test if java currently in PATH works (reject macOS stub which exits with 1)
     current_java = shutil.which("java")
     if current_java:
         try:
@@ -50,7 +50,7 @@ def ensure_java_environment() -> Optional[str]:
                 timeout=5,
             )
             # macOS stub prints "Unable to locate a Java Runtime" and exits with 1
-            if res.returncode == 0 or "openjdk" in res.stderr.lower() or "runtime" in res.stderr.lower():
+            if res.returncode == 0 and "unable to locate a java runtime" not in res.stderr.lower():
                 return current_java
         except Exception:
             pass
@@ -67,7 +67,7 @@ def ensure_java_environment() -> Optional[str]:
                     text=True,
                     timeout=5,
                 )
-                if res.returncode == 0 or "openjdk" in res.stderr.lower():
+                if res.returncode == 0 and "unable to locate a java runtime" not in res.stderr.lower():
                     # Prepend to PATH so child processes and opendataloader-pdf find it
                     cand_str = str(cand_dir)
                     current_path = os.environ.get("PATH", "")

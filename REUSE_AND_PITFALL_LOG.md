@@ -4,6 +4,27 @@
 
 规则：执行任务前先读本文件；任务完成后**双写**——先追加本文件，再同步追加总库（见 AGENTS.md）。
 
+## 2026-10-25 · macOS GUI 环境变量缺失诱发 OpenDataLoader Java 桩命令报错排查与自动注入修复（P052-LiteParse-PDF自动识别）
+
+- 场景：用户截图反馈桌面工作台中处理扫描文献时抛出红色报错：`Command '['java', '-Djava.awt.headless=true', ... 'opendataloader-pdf-cli.jar' ...] returned non-zero exit status 1`。
+- 结论与做法：
+  ① **定位根因：macOS GUI 环境隔离与系统空 Java 桩误判**：
+     - 当从访达直接启动 macOS GUI 桌面应用时，系统不加载用户的终端配置（`.zshrc` / `.zprofile`），`PATH` 仅包含系统精简路径 `/usr/bin:/bin:/usr/sbin`；
+     - 此时 `shutil.which("java")` 命中了系统自带的 `/usr/bin/java`，但该文件并非真实 JRE，而是一个空占位桩（Stub），执行时报错 `Unable to locate a Java Runtime` 并退出状态码 1；
+     - 旧逻辑中存在匹配漏洞：`if ... or "runtime" in res.stderr.lower()` 误将错误信息中的 "Runtime" 判定为正常 Java 运行时，导致过早返回系统空桩，未去激活 Homebrew 安装的真实 OpenJDK；
+  ② **严格 Java 验证门禁与多级候选自动注入 (`src/opendataloader_extractor.py`)**：
+     - 将探测条件收紧为硬门禁：必须 `res.returncode == 0` 且明确排除 `"unable to locate a java runtime"`；
+     - 建立系统级自动搜索序列（优先探测 `/opt/homebrew/opt/openjdk/bin/java` 与 `~/.local/bin/java`），一旦命中，自动将其目录强行注入当前 Python 进程及后续所有子进程的 `os.environ["PATH"]` 最前端，并同步配置 `JAVA_HOME`；
+  ③ **Swift 桌面端环境主动穿透 (`BackendManager.swift`)**：
+     - 在原生桌面端启动后端 Python 进程时，显式将 Homebrew 与局部环境路径（`/Users/joe/.local/bin:/opt/homebrew/bin:/opt/homebrew/opt/openjdk/bin`）注入 `proc.environment`，确保纯 GUI 点击启动下具备 100% 完备的运行时；
+  ④ **端到端实证闭环**：
+     - 重新测试扫描件切片样本，OpenDataLoader 毫秒级命中 OpenJDK 27，6 秒内完整交付 `中文精译版.pdf`、`双语对照版.pdf` 与 `原位双层版.html`；
+     - 全量 248/248 单元测试全绿通过（20.88s）。
+- 踩坑点：
+  1. **macOS `/usr/bin/java` 是极其隐蔽的空占位桩**：切勿使用宽泛的字符串包含（如 `"runtime"` 或 `"java"`）来判断 Java 是否可用，因为系统提示 `Unable to locate a Java Runtime` 恰好包含这些词；必须且只能以 `returncode == 0` 作为唯一可用凭据。
+  2. **macOS 桌面 GUI 进程不继承终端 shell 环境变量**：依赖外部 CLI 工具（如 `java`、`gs`、`tesseract` 等）的 Python 后台若由 GUI App 启动，必须在应用层或模块入口处主动补齐 PATH。
+- 适用场景：macOS 原生应用拉起后端服务、Java/Python 跨语言工具链打包部署。
+
 ## 2026-10-25 · 基于 Oil UI 瑞士排版规范重构 macOS 原生学术重构桌面应用（P052-LiteParse-PDF自动识别）
 
 - 场景：用户反馈初版界面过于厚重粗糙（“太丑了”）。排查诊断定位出根因在于陷入了“套娃式灰色大卡片堆叠”的模板病：巨型灰色投递区独占 60% 屏幕挤压了核心流水线，多层深灰卡片削弱了光感，圆角粗药丸导致视觉层级生硬扁平。根据 Oil UI 规范，用户选定【方向二：精密学术出版 · 典雅瑞士排版（Swiss Precision Publishing）】进行系统性重构。
