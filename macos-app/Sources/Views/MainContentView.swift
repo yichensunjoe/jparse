@@ -6,11 +6,8 @@ public struct MainContentView: View {
     public init() {}
 
     public var body: some View {
-        HStack(spacing: 0) {
-            SwissSidebarView(manager: manager)
-            SwissMainView(manager: manager)
-        }
-        .frame(minWidth: 940, minHeight: 660)
-        .background(SwissTheme.canvasBg)
+        LightContentView(manager: manager)
+            .frame(minWidth: 900, minHeight: 640)
+            .background(LightTheme.canvasBg)
     }
 }

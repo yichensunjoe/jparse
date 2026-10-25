@@ -36,11 +36,12 @@ echo "⚡️ 正在使用 Apple Swift 编译器编译原生 Liquid Glass 渲染�
 SWIFT_SOURCES=(
     "$SCRIPT_DIR/Sources/Models/Models.swift"
     "$SCRIPT_DIR/Sources/Services/BackendManager.swift"
-    "$SCRIPT_DIR/Sources/Views/SwissStyles.swift"
-    "$SCRIPT_DIR/Sources/Views/SwissSidebarView.swift"
-    "$SCRIPT_DIR/Sources/Views/SwissDropRailView.swift"
-    "$SCRIPT_DIR/Sources/Views/SwissTaskRowView.swift"
-    "$SCRIPT_DIR/Sources/Views/SwissMainView.swift"
+    "$SCRIPT_DIR/Sources/Views/LightTheme.swift"
+    "$SCRIPT_DIR/Sources/Views/LightHeaderView.swift"
+    "$SCRIPT_DIR/Sources/Views/LightDropZoneView.swift"
+    "$SCRIPT_DIR/Sources/Views/LightTaskCardView.swift"
+    "$SCRIPT_DIR/Sources/Views/LightFooterView.swift"
+    "$SCRIPT_DIR/Sources/Views/LightContentView.swift"
     "$SCRIPT_DIR/Sources/Views/MainContentView.swift"
     "$SCRIPT_DIR/Sources/App.swift"
 )
