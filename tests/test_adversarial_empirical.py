@@ -534,5 +534,125 @@ class TestInSituRosterAndLegalNoticeIsolation(unittest.TestCase):
         self.assertTrue(is_clean_ocr_item(valid_marker_a, page_w=612.0, page_h=792.0))
 
 
+class TestInSituLayoutCascadeAndFitting(unittest.TestCase):
+    """验证原位排版仿 pdf2zh 动态字号行距缩放、纵向层叠防重叠与页底脚注保护。"""
+
+    def test_estimate_rendered_lines_cjk_and_latin(self):
+        from src.in_situ_renderer import estimate_rendered_lines
+
+        # 30 个汉字在 150pt 宽度、10pt 字号下应该排 ~2-3 行
+        cjk_text = "液体燃料反应堆的主要好处之一是有可能不断加工燃料和一揽子材料"
+        lines = estimate_rendered_lines(cjk_text, font_size_pt=10.0, width_pt=150.0)
+        self.assertTrue(2 <= lines <= 3)
+
+        # 短英文字符串在足够宽的容器里排 1 行
+        short_en = "Chapter 6 Chemical Processing"
+        lines_en = estimate_rendered_lines(short_en, font_size_pt=10.0, width_pt=300.0)
+        self.assertEqual(lines_en, 1)
+
+    def test_dynamic_typography_fitting_scales_down(self):
+        from src.in_situ_renderer import compute_block_typography
+
+        # 长文本在有限高度容器中必须自适应缩小行距与字号，防止溢出膨胀
+        blk = {
+            "text": "Long paragraph text with lots of details about chemical extraction and reactor fuels.",
+            "zh_text": "在295°C时，0.02米的U02S04溶液中，硫酸钡的溶解度为7毫克/千克H2O，硫酸锶的溶解度为21毫克/千克H2O。在酸性溶液中由于氢气的存在会发生还原反应。",
+            "font_size": 8.5,
+            "w": 320.0,
+            "h": 35.0,  # 目标高度较紧凑
+            "lines_count": 3,
+        }
+        fs, fw, lh, sp = compute_block_typography(blk, page_w=419.0, page_h=594.0, target_h=35.0)
+        self.assertLessEqual(lh, 1.40)
+        self.assertLessEqual(fs, 10.0)
+
+    def test_cascade_prevents_consecutive_block_overlap(self):
+        from src.in_situ_renderer import layout_page_blocks
+
+        # 连续两个块处于同一栏，前一个块由于译文较长向下扩展，后一个块必须被级联下推
+        blocks = [
+            {
+                "orig_text": "Block 1 line 1. Block 1 line 2.",
+                "zh_text": "第 18 项参考文献详细阐述了均相反应堆项目的季度技术进展报告，涵盖各项工程与化学处理流程指标。",
+                "x": 55.0, "y": 60.0, "w": 320.0, "h": 20.0, "font_size": 8.0,
+            },
+            {
+                "orig_text": "Block 2 line 1.",
+                "zh_text": "第 19 项参考文献阐述了锕系元素化学分离过程。",
+                "x": 55.0, "y": 82.0, "w": 320.0, "h": 20.0, "font_size": 8.0,
+            },
+        ]
+        placed = layout_page_blocks(blocks, page_w=419.0, page_h=594.0, min_gap=2.5)
+        self.assertEqual(len(placed), 2)
+        b0, b1 = placed[0], placed[1]
+        self.assertGreaterEqual(b1["y"], b0["y"] + b0["est_h"] + 2.5)
+
+    def test_reference_typography_scale(self):
+        from src.in_situ_renderer import quantize_typography
+
+        # 参考文献条目（如 18. R. E. LEUZE et al.）字号收敛于 8.5~9.5pt，避免强制 11pt 导致炸裂
+        ref_blk = {
+            "orig_text": "18. R. E. LEUZE et al., in Homogeneous Reactor Project Quarterly Progress Report",
+            "font_size": 7.8, "x": 55.0, "y": 62.0, "w": 320.0, "h": 30.0,
+        }
+        font_size, weight = quantize_typography(ref_blk, page_w=419.0, page_h=594.0)
+        self.assertLessEqual(font_size, 9.5)
+        self.assertGreaterEqual(font_size, 8.5)
+
+    def test_footnote_ceiling_prevents_encroachment(self):
+        from src.in_situ_renderer import layout_page_blocks
+
+        # 正文块很长，但下方有页底脚注，正文块不得侵入脚注保护区
+        blocks = [
+            {
+                "orig_text": "Body paragraph filling the page.",
+                "zh_text": "液体燃料反应堆的主要优势之一是可以连续处理燃料和包层材料以消除裂变产物和其他毒物。" * 8,
+                "x": 55.0, "y": 140.0, "w": 320.0, "h": 380.0, "font_size": 9.0,
+            },
+            {
+                "orig_text": "*By R. A. McNees, with contributions from...",
+                "zh_text": "* 由 R. A. McNees 提供，经橡树岭国家实验室授权。",
+                "x": 55.0, "y": 550.0, "w": 320.0, "h": 22.0, "font_size": 8.5,
+            },
+        ]
+        placed = layout_page_blocks(blocks, page_w=419.0, page_h=594.0, min_gap=2.5)
+        body = [b for b in placed if not b["is_footnote"]][0]
+        fn = [b for b in placed if b["is_footnote"]][0]
+        self.assertLessEqual(body["y"] + body["est_h"], fn["y"])
+
+    def test_chapter_and_section_heading_quantization(self):
+        from src.in_situ_renderer import quantize_typography
+
+        # CHAPTER 6 必须识别为一级标题字号 (>= 12.0pt, weight 700)
+        ch_blk = {"orig_text": "CHAPTER 6", "font_size": 10.5, "align": "center", "y": 75.0, "w": 60.0}
+        fs, fw = quantize_typography(ch_blk, page_w=419.0, page_h=594.0)
+        self.assertGreaterEqual(fs, 12.0)
+        self.assertEqual(fw, "700")
+
+        # 居中全大写章节副标题 (CHEMICAL PROCESSING*) 识别为章节标题
+        sub_blk = {"orig_text": "CHEMICAL PROCESSING*", "font_size": 10.5, "align": "center", "y": 98.0, "w": 128.0}
+        fs_sub, fw_sub = quantize_typography(sub_blk, page_w=419.0, page_h=594.0)
+        self.assertGreaterEqual(fs_sub, 12.0)
+        self.assertEqual(fw_sub, "700")
+
+        # 连字符格式章节小节号 (6-1. INTRODUCTION 或 6-l. INTRODUCTION) 识别为二级标题 (11.0pt, weight 600)
+        sec_blk = {"orig_text": "6-1. INTRODUCTION", "font_size": 10.5, "align": "center", "y": 120.0, "w": 83.0}
+        fs_sec, fw_sec = quantize_typography(sec_blk, page_w=419.0, page_h=594.0)
+        self.assertEqual(fs_sec, 11.0)
+        self.assertEqual(fw_sec, "600")
+
+    def test_alphanumeric_word_wrap_line_estimation(self):
+        from src.in_situ_renderer import estimate_rendered_lines
+
+        # 包含长英文单词/编号/化学式的致密参考文献条目，换行估算必须考虑单词整体换行 slack
+        ref_text = (
+            "13. D. E. FERGUSON 等人。Oak Ridge 国家实验室，载于同质反应堆项目季度进展报告，"
+            "USEC Reports ORNL-2272,1957 年(第 5 页)。133-135;ORNL-2331,1957 年(第 13 页)。"
+            "142-143,148-149;ORNL-2379,1957 年(第 2 页)。138-139。"
+        )
+        lines = estimate_rendered_lines(ref_text, font_size_pt=8.5, width_pt=322.8)
+        self.assertGreaterEqual(lines, 4)
+
+
 if __name__ == "__main__":
     unittest.main()

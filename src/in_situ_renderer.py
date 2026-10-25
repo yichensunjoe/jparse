@@ -229,8 +229,8 @@ def should_merge_blocks(last_b: dict, b: dict, page_w: float, max_vgap: float = 
         re.I
     ))
 
-    # Major section numbers (e.g. 5.1, 5.2, 5.3, 5.4, 4.16, 1.1, or * 6.3, or 4.10 *) ALWAYS start a brand new block!
-    if not is_measurement_start and re.match(r"^(\*\s*)?\d+(\.\d+)+(\s*\*+)?\s+[A-Z]", curr_txt):
+    # Major section numbers (e.g. 5.1, 5.2, 5.3, 5.4, 4.16, 1.1, 6-1, 6-2.3, or * 6.3, or 4.10 *) ALWAYS start a brand new block!
+    if not is_measurement_start and re.match(r"^(\*\s*)?\d+[\.\-][\d\w]+(\.[\d\w]+)*[\.\:]?(\s*\*+)?\s+[A-Z]", curr_txt):
         return False
     # Major chapter headers (e.g. 5. RADIATION, 6. STAFF AND PROCEDURES, 4. CONTAINMENT)
     if re.match(r"^\d+\.\s+[A-Z\s]{3,}", curr_txt):
@@ -361,6 +361,81 @@ def merge_smart_paragraphs(
     return result
 
 
+def estimate_rendered_lines(text: str, font_size_pt: float, width_pt: float) -> int:
+    """Accurately estimate lines of wrapped text in CJK typography with word-wrapping awareness."""
+    txt = text.strip()
+    if not txt:
+        return 1
+    # CSS padding: 1px 2px (left + right = 4px = 3.0pt), plus border buffer
+    avail_w = max(10.0, width_pt - 4.5)
+
+    tokens = []
+    # Tokenize into newlines, whitespace, individual CJK ideographs/punctuation, or alphanumeric word chunks
+    pattern = re.compile(
+        r'(\n|[ \t]+|[\u4e00-\u9fff\u3400-\u4dbf\u3000-\u303f\uff01-\uff60]|[A-Za-z0-9_\-\.\,\:\;\/\(\)\~\[\]\<\>\*\+\=\%]+|[^\s])'
+    )
+    for m in pattern.finditer(txt):
+        tokens.append(m.group(0))
+
+    lines = 1
+    cur_w = 0.0
+    for tok in tokens:
+        if tok == '\n':
+            lines += 1
+            cur_w = 0.0
+            continue
+        if tok.isspace():
+            w = len(tok) * font_size_pt * 0.32
+            if cur_w + w <= avail_w:
+                cur_w += w
+            continue
+
+        # Measure token width based on character typography
+        tok_w = 0.0
+        for ch in tok:
+            code = ord(ch)
+            if (0x4E00 <= code <= 0x9FFF or 
+                0x3400 <= code <= 0x4DBF or 
+                0x3000 <= code <= 0x303F or 
+                0xFF01 <= code <= 0xFF60):
+                cw = font_size_pt * 1.02
+            elif 'A' <= ch <= 'Z':
+                cw = font_size_pt * 0.72
+            elif 'a' <= ch <= 'z':
+                cw = font_size_pt * 0.56
+            elif '0' <= ch <= '9':
+                cw = font_size_pt * 0.60
+            elif ch in '-—–/':
+                cw = font_size_pt * 0.45
+            else:
+                cw = font_size_pt * 0.52
+            # Add CSS letter-spacing
+            cw += font_size_pt * 0.02
+            tok_w += cw
+
+        if tok_w > avail_w:
+            # Token itself is wider than available width: must break inside token
+            if cur_w > 0:
+                lines += 1
+                cur_w = 0.0
+            for ch in tok:
+                code = ord(ch)
+                cw = font_size_pt * (1.02 if code >= 0x3000 else 0.62)
+                if cur_w + cw > avail_w:
+                    lines += 1
+                    cur_w = cw
+                else:
+                    cur_w += cw
+        else:
+            if cur_w + tok_w > avail_w:
+                lines += 1
+                cur_w = tok_w
+            else:
+                cur_w += tok_w
+
+    return max(1, lines)
+
+
 def quantize_typography(blk: dict, page_w: float, page_h: float) -> Tuple[float, str]:
     """Map erratic OCR character font sizes into a clean, uniform, professional typographic scale."""
     raw_font = float(blk.get("font_size", 10.0))
@@ -374,30 +449,41 @@ def quantize_typography(blk: dict, page_w: float, page_h: float) -> Tuple[float,
     if raw_font >= 15.0 or (align == "center" and raw_font >= 13.0 and by < page_h * 0.3):
         return 15.5, "700"
 
-    # 2. Main Chapter / Major Part Headings (e.g. 5. RADIATION, 3. COOLANT, 6. STAFF, PART VI)
-    is_part_heading = bool(re.match(r"^PART\s+[IVXLCDM]+", txt, re.I))
+    # 2. Section clauses (e.g. 1.8, * 1.8, 6.3, * 6.3, 6-1, 6-l, 6-2.3, 4.16, etc.) ALWAYS get standard body font 11.0pt!
+    is_sec = bool(re.match(r"^(\*+\s*)?(\d+[\.\-][\d\w]+(\.[\d\w]+)*[\.\:]?)\s+", txt))
+    if is_sec:
+        font_weight = "600" if (raw_font >= 10.5 or "INTRODUCTION" in txt.upper()) else "400"
+        return 11.0, font_weight
+
+    # 3. Main Chapter / Major Part Headings (e.g. CHAPTER 6, 5. RADIATION, 3. COOLANT, 6. STAFF, PART VI)
+    is_part_heading = bool(re.match(r"^(PART|CHAPTER)\s+[A-Za-z0-9IVXLCDM]+", txt, re.I))
     is_num_chapter = bool(re.match(r"^(\d+\.|\b[IVXLCDM]+\b\.?)\s+[A-Z\s]{3,}", txt)) and not re.match(r"^[A-Z]\.\s+[A-Z][a-z]+", txt)
-    is_chapter_heading = is_part_heading or is_num_chapter
+    is_chapter_title_centered = (
+        align == "center" and by < page_h * 0.25 and len(txt) < 50 and
+        txt.replace("*", "").strip().isupper() and not re.match(r"^TABLE\b", txt, re.I)
+    )
+    is_chapter_heading = is_part_heading or is_num_chapter or is_chapter_title_centered
     if is_chapter_heading or (raw_font >= 12.5 and len(txt) < 50 and txt.isupper()) or (raw_font >= 13.0 and len(txt) < 40 and txt.isupper()):
         return 12.5, "700"
-
-    # 3. Section clauses (e.g. 1.8, * 1.8, 6.3, * 6.3, 4.16, etc.) ALWAYS get standard body font 11.0pt!
-    is_sec = bool(re.match(r"^(\*+\s*)?(\d+(\.\d+)+)\s+", txt))
-    if is_sec:
-        font_weight = "600" if raw_font >= 11.0 else "400"
-        return 11.0, font_weight
 
     # 4. Footnotes (ONLY true bottom-of-page footnotes, NOT mid-page section clauses)
     is_bottom_footnote = (
         by > page_h * 0.78 and
-        (txt.startswith(("*", "†", "‡")) or raw_font <= 9.0) and
+        (txt.startswith(("*", "†", "‡")) or "contribution from" in txt.lower() or "footnote" in txt.lower() or raw_font <= 9.0) and
         len(txt) > 20 and
         not is_sec
     )
     if is_bottom_footnote:
-        return 9.5, "400"
+        return 9.0, "400"
 
-    # 5. Dense single-line roster / distribution list items (e.g. Page 11 personnel names)
+    # 5. Academic reference entries (e.g. 18. R. E. LEUZE et al., in Homogeneous Reactor...)
+    is_ref_item = bool(re.match(r"^(\[\d+\]|\b\d{1,3}[\.\:])\s+[A-Z]", txt))
+    if is_ref_item and raw_font <= 9.5:
+        ref_font = round(min(9.5, max(8.5, raw_font + 0.5)), 1)
+        return ref_font, "400"
+
+    # 6. Dense single-line roster / distribution list items (e.g. Page 11 personnel names)
+    words = txt.split()
     is_roster_item = (
         bw < page_w * 0.45 and
         not txt.rstrip().endswith("-") and
@@ -406,50 +492,205 @@ def quantize_typography(blk: dict, page_w: float, page_h: float) -> Tuple[float,
         (
             (lines_count == 1 and len(txt) < 55 and not re.search(r"[。，；,;]", txt))
             or is_roster_entry(txt)
+            or (len(words) <= 5 and len(txt) <= 45 and bool(re.match(r"^(\d+|\([A-Z0-9\-]+\))", txt)))
         )
     )
     if is_roster_item:
         return 9.5, "400"
 
-    # 6. Standard Body Paragraphs, Section Clauses, and Notice Blocks (Universal Default)
-    # Scaled to 11.0pt (standard 5-hao book typography) for enhanced fullness and legibility
-    return 11.0, "400"
+    # 7. Standard Body Paragraphs, Section Clauses, and Notice Blocks (Universal Default)
+    if raw_font < 9.5:
+        base_font = round(min(11.0, max(9.5, raw_font + 0.8)), 1)
+    else:
+        base_font = 11.0
+    return base_font, "400"
 
 
 def compute_block_typography(
     blk: dict,
     page_w: float,
     page_h: float,
+    target_h: Optional[float] = None,
 ) -> Tuple[float, str, float, str]:
     """Compute quantized font size, weight, adaptive line-height, and letter-spacing.
 
-    Dynamically balances font size and line height so translated Chinese paragraphs
-    occupy approximately the same vertical and horizontal footprint as the original English text.
+    Mimics pdf2zh dynamic fitting:
+    - Scales down line_height dynamically when translated text exceeds target height.
+    - Gracefully adjusts font size so dense paragraphs fit without ballooning or colliding.
+    - Keeps line height within standard, comfortable typography (1.10 to 1.48) without artificial ballooning.
     """
     render_font_pt, font_weight = quantize_typography(blk, page_w, page_h)
     bw = float(blk.get("w", 0.0))
     bh = float(blk.get("h", 0.0))
+    avail_h = bh if target_h is None else target_h
     lines_count = blk.get("lines_count", 1)
-    zh_text = blk.get("zh_text", "")
+    zh_text = blk.get("zh_text", blk.get("text", "")).strip()
     zh_len = len(zh_text)
 
-    # Single line or very short block: clean, compact line height
-    if lines_count == 1 or bh < 24.0 or zh_len < 25:
-        line_height = 1.45
-        letter_spacing = "0.02em"
+    # Short single line or tiny container: clean, compact line height
+    if (lines_count == 1 and zh_len < 25) or (avail_h < 18.0 and zh_len < 15):
+        return render_font_pt, font_weight, 1.35, "0.02em"
+
+    line_height = 1.40
+    font_size = render_font_pt
+    min_lh = 1.10
+    min_fs = max(7.5, render_font_pt - 2.5)
+
+    est_lines = estimate_rendered_lines(zh_text, font_size, bw)
+    est_h = est_lines * font_size * line_height
+
+    if est_h < avail_h:
+        # Breathable spacing if target container is spacious, but strictly capped at 1.48
+        target_lh = avail_h / max(1.0, (est_lines * font_size))
+        line_height = round(min(1.48, max(1.35, target_lh)), 2)
     else:
-        # Estimate how many lines this Chinese text will wrap into at render_font_pt
-        char_w = render_font_pt * 0.95
-        chars_per_line = max(1.0, bw / char_w)
-        est_lines = max(1, int(math.ceil(zh_len / chars_per_line)))
+        # Step a: Dynamically reduce line-height (mimic pdf2zh)
+        while (est_lines * font_size * line_height > avail_h) and line_height > min_lh:
+            line_height -= 0.05
+        line_height = round(max(min_lh, line_height), 2)
+        # Step b: If still exceeding avail_h, scale down font_size
+        while (est_lines * font_size * line_height > avail_h) and font_size > min_fs:
+            font_size -= 0.5
+            est_lines = estimate_rendered_lines(zh_text, font_size, bw)
+            while (est_lines * font_size * line_height > avail_h) and line_height > min_lh:
+                line_height -= 0.05
+            line_height = round(max(min_lh, line_height), 2)
 
-        # Target line height to fill the original bounding box height bh
-        target_lh = bh / (est_lines * render_font_pt)
-        # Keep line-height within visually comfortable, breathable bounds (1.60 to 2.15)
-        line_height = round(min(2.15, max(1.60, target_lh)), 2)
-        letter_spacing = "0.035em"
+    letter_spacing = "0.015em" if (line_height < 1.30 or font_size <= 9.0) else "0.025em"
+    return font_size, font_weight, line_height, letter_spacing
 
-    return render_font_pt, font_weight, line_height, letter_spacing
+
+def layout_page_blocks(
+    blocks: List[dict],
+    page_w: float,
+    page_h: float,
+    min_gap: float = 4.0,
+) -> List[dict]:
+    """Perform columnar vertical flow cascade and collision avoidance across all blocks on a page.
+
+    Enforces:
+    1. Dynamic fitting for dense paragraphs and references.
+    2. Non-overlapping columnar cascade: block[i].top >= block[i-1].bottom + min_gap.
+    3. Footnote boundary protection: bottom footnotes reserve their space and prevent main body encroachment.
+    """
+    if not blocks:
+        return []
+
+    # Separate footnotes and body blocks
+    footnotes = []
+    body_blocks = []
+    sec_pat = re.compile(r"^(\*+\s*)?(\d+[\.\-][\d\w]+(\.[\d\w]+)*[\.\:]?)\s+")
+    for b in blocks:
+        orig = b.get("orig_text", b.get("text", "")).strip()
+        y = float(b.get("y", 0.0))
+        is_fn = (
+            y > page_h * 0.78 and
+            (orig.startswith(("*", "†", "‡")) or "contribution from" in orig.lower() or "footnote" in orig.lower()) and
+            not sec_pat.match(orig)
+        )
+        if is_fn:
+            footnotes.append(b)
+        else:
+            body_blocks.append(b)
+
+    sorted_body = sorted(body_blocks, key=lambda b: (float(b["y"]), float(b["x"])))
+    placed = []
+
+    for blk in sorted_body:
+        bx = float(blk.get("x", 0.0))
+        by = float(blk.get("y", 0.0))
+        bw = float(blk.get("w", 0.0))
+        bh = float(blk.get("h", 0.0))
+        zh_text = blk.get("zh_text", blk.get("text", "")).strip()
+
+        # Find max allowed bottom for this column (protect footnote and page margin)
+        max_col_bottom = page_h - 16.0
+        for fn in footnotes:
+            fn_x = float(fn.get("x", 0.0))
+            fn_w = float(fn.get("w", 0.0))
+            fn_y = float(fn.get("y", 0.0))
+            h_ov = min(bx + bw, fn_x + fn_w) - max(bx, fn_x)
+            if h_ov > 0.35 * min(bw, fn_w) or (h_ov > 25.0 and bw > 80.0):
+                max_col_bottom = min(max_col_bottom, fn_y - 8.0)
+
+        # Compute initial typography fitting
+        fs, fw, lh, sp = compute_block_typography(blk, page_w, page_h, target_h=bh)
+        lines = estimate_rendered_lines(zh_text, fs, bw)
+        est_h = round(lines * fs * lh + 2.5, 2)
+
+        # Cascade against previous placed blocks in the same column/stream
+        cur_y = by
+        for prev in placed:
+            h_ov = min(bx + bw, prev["x"] + prev["w"]) - max(bx, prev["x"])
+            if h_ov > 0.35 * min(bw, prev["w"]) or (h_ov > 25.0 and bw > 80.0):
+                if prev["orig_y"] <= by + 2.0:
+                    min_y = prev["y"] + prev["est_h"] + min_gap
+                    cur_y = max(cur_y, min_y)
+
+        # Boundary check against footnote ceiling
+        if cur_y + est_h > max_col_bottom:
+            avail = max(18.0, max_col_bottom - cur_y)
+            fs, fw, lh, sp = compute_block_typography(blk, page_w, page_h, target_h=avail)
+            lines = estimate_rendered_lines(zh_text, fs, bw)
+            est_h = round(lines * fs * lh + 2.5, 2)
+
+        placed.append({
+            "orig_y": by,
+            "y": cur_y,
+            "x": bx,
+            "w": bw,
+            "orig_h": bh,
+            "est_h": est_h,
+            "render_font_pt": fs,
+            "font_weight": fw,
+            "line_height": lh,
+            "letter_spacing": sp,
+            "orig_text": blk.get("orig_text", blk.get("text", "")),
+            "zh_text": zh_text,
+            "align": blk.get("align", "left"),
+            "lines_count": blk.get("lines_count", 1),
+            "is_footnote": False,
+        })
+
+    # Place footnotes ensuring no collision with placed blocks above
+    for fn in footnotes:
+        fn_x = float(fn.get("x", 0.0))
+        fn_y = float(fn.get("y", 0.0))
+        fn_w = float(fn.get("w", 0.0))
+        fn_h = float(fn.get("h", 0.0))
+        zh_text = fn.get("zh_text", fn.get("text", "")).strip()
+
+        fs, fw, lh, sp = compute_block_typography(fn, page_w, page_h, target_h=fn_h)
+        lines = estimate_rendered_lines(zh_text, fs, fn_w)
+        est_h = round(lines * fs * lh + 2.5, 2)
+
+        cur_fn_y = fn_y
+        for prev in placed:
+            h_ov = min(fn_x + fn_w, prev["x"] + prev["w"]) - max(fn_x, prev["x"])
+            if h_ov > 0.35 * min(fn_w, prev["w"]) or (h_ov > 25.0 and fn_w > 80.0):
+                if prev["y"] + prev["est_h"] + min_gap > cur_fn_y:
+                    cur_fn_y = prev["y"] + prev["est_h"] + min_gap
+
+        placed.append({
+            "orig_y": fn_y,
+            "y": cur_fn_y,
+            "x": fn_x,
+            "w": fn_w,
+            "orig_h": fn_h,
+            "est_h": est_h,
+            "render_font_pt": fs,
+            "font_weight": fw,
+            "line_height": lh,
+            "letter_spacing": sp,
+            "orig_text": fn.get("orig_text", fn.get("text", "")),
+            "zh_text": zh_text,
+            "align": fn.get("align", "left"),
+            "lines_count": fn.get("lines_count", 1),
+            "is_footnote": True,
+        })
+
+    placed.sort(key=lambda b: (b["y"], b["x"]))
+    return placed
 
 
 def render_insitu_html_document(
@@ -753,12 +994,16 @@ def render_insitu_html_document(
         <div class="text-layer">
 """)
 
-        for blk in p_trans:
+        layout_blocks = layout_page_blocks(p_trans, pw, ph)
+        for blk in layout_blocks:
             bx = blk["x"]
             by = blk["y"]
             bw = blk["w"]
-            bh = blk["h"]
-            font_size = blk["font_size"]
+            bh = blk["est_h"]
+            render_font_pt = blk["render_font_pt"]
+            font_weight = blk["font_weight"]
+            line_height = blk["line_height"]
+            letter_spacing = blk["letter_spacing"]
             align = blk.get("align", "left")
             orig_text = blk["orig_text"]
             zh_text = blk["zh_text"]
@@ -769,7 +1014,6 @@ def render_insitu_html_document(
             min_height_pct = round(bh / ph * 100.0, 3)
 
             lines_count = blk.get("lines_count", 1)
-            render_font_pt, font_weight, line_height, letter_spacing = compute_block_typography(blk, pw, ph)
 
             # Prevent text clipping and collision for tight single-line list entries
             if lines_count == 1 and bw < pw * 0.45 and not orig_text.rstrip().endswith("-"):
