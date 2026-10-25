@@ -124,11 +124,11 @@ class ConversionTaskManager:
                 "pdf2zh_service": opts.get("service", "bing"),
                 "pdf2zh_threads": 4,
             }
-            if p_mode == "opendataloader":
-                config["upstream_extractor"] = "opendataloader"
-            elif p_mode == "scanned":
+            if p_mode == "insitu_legacy":
+                config["force_pipeline"] = "insitu_legacy"
                 config["upstream_extractor"] = "liteparse"
             else:
+                config["force_pipeline"] = p_mode
                 config["upstream_extractor"] = "opendataloader"
             output_paths = route_and_process_pdf(
                 pdf_path=input_path,
@@ -626,7 +626,7 @@ INDEX_HTML = """<!DOCTYPE html>
             <div class="logo-icon">⚡️</div>
             <div>
                 <div class="brand-title">LiteParse 交互式工作台</div>
-                <div class="brand-subtitle">双轨智能版面路由器 · OpenDataLoader-PDF 顶尖抽取与原位双语重构</div>
+                <div class="brand-subtitle">双轨智能版面路由器 · OpenDataLoader 顶尖抽取与出版级高清重构</div>
             </div>
         </div>
         <div class="header-actions">
@@ -661,9 +661,9 @@ INDEX_HTML = """<!DOCTYPE html>
                 <span>智能路由策略:</span>
                 <select id="pipelineMode" class="select-input">
                     <option value="auto">🤖 智能自动判别 (Auto Dual-Track 推荐)</option>
-                    <option value="opendataloader">⚡️ OpenDataLoader 原位双语重构 (顶尖抽取 · XY-Cut++)</option>
-                    <option value="vector">📘 强制现代矢量论文流 (pdf2zh 无损擦除)</option>
-                    <option value="scanned">📜 强制历史扫描文献流 (LiteParse 原位双层)</option>
+                    <option value="scanned">⚡️ 扫描件出版级高清重构 (HD PDF · 原图提取嵌入 · 双语对照)</option>
+                    <option value="vector">📘 现代矢量学术论文 (pdf2zh 矢量无损排版)</option>
+                    <option value="insitu_legacy">📜 历史原位双层对比画布 (仅生成 HTML)</option>
                 </select>
             </div>
             <div class="control-group">

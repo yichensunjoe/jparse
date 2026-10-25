@@ -937,10 +937,18 @@ class Watcher:
         output = self.config.outbox / (
             source.stem + "." + self.config.output_extension
         )
-        if output.exists():
-            archived = self._archive_success(source)
-            self.logger.warning("检测到已完成输出，仅恢复归档：%s", archived.name)
-            return
+        if self.config.dual_track_mode != "disabled":
+            mono_hd = self.config.outbox / f"{source.stem}-中文精译版.pdf"
+            mono_legacy = self.config.outbox / f"{source.stem}.mono.pdf"
+            if mono_hd.exists() or mono_legacy.exists():
+                archived = self._archive_success(source)
+                self.logger.warning("检测到已完成双轨出版级输出，仅恢复归档：%s", archived.name)
+                return
+        else:
+            if output.exists():
+                archived = self._archive_success(source)
+                self.logger.warning("检测到已完成输出，仅恢复归档：%s", archived.name)
+                return
 
         if self.config.dual_track_mode != "disabled":
             try:
@@ -996,6 +1004,9 @@ class Watcher:
         try:
             for partial in self.config.processing.iterdir():
                 if partial.name.startswith(prefix) and partial.name.endswith(".partial"):
+                    remove_path(partial)
+            for partial in self.config.outbox.iterdir():
+                if partial.name.startswith(f".{stem}") and partial.name.endswith(".tmp"):
                     remove_path(partial)
         except OSError as exc:
             self.logger.warning("清理临时文件失败：%s", exc)

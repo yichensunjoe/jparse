@@ -59,14 +59,31 @@ class TestRouterDispatchLogic(unittest.TestCase):
         self.assertEqual(len(res), 1)
 
     @patch("src.router.process_vector_pdf_with_pdf2zh")
+    @patch("src.router.process_scanned_pdf_to_hd_pdf")
+    def test_force_pipeline_scanned(self, mock_hd_scan, mock_vector):
+        mock_hd_scan.return_value = [
+            Path("outbox/fake-中文精译版.pdf"),
+            Path("outbox/fake-双语对照版.pdf"),
+            Path("outbox/fake.原位双层版.html"),
+        ]
+        res = route_and_process_pdf(
+            pdf_path=Path("fake.pdf"),
+            outbox_dir=Path("outbox"),
+            config={"force_pipeline": "scanned"}
+        )
+        mock_hd_scan.assert_called_once()
+        mock_vector.assert_not_called()
+        self.assertEqual(len(res), 3)
+
+    @patch("src.router.process_vector_pdf_with_pdf2zh")
     @patch("src.router.process_pdf_to_insitu_html")
-    def test_force_pipeline_scanned(self, mock_insitu, mock_vector):
+    def test_force_pipeline_insitu_legacy(self, mock_insitu, mock_vector):
         mock_insitu.return_value = Path("outbox/fake.原位双层版.html")
         with patch.object(Path, "replace"):
             res = route_and_process_pdf(
                 pdf_path=Path("fake.pdf"),
                 outbox_dir=Path("outbox"),
-                config={"force_pipeline": "scanned"}
+                config={"force_pipeline": "insitu_legacy"}
             )
         mock_insitu.assert_called_once()
         mock_vector.assert_not_called()

@@ -11,9 +11,11 @@ if str(_SRC_DIR) not in sys.path:
     sys.path.insert(0, str(_SRC_DIR))
 
 try:
+    from .hd_scan_renderer import process_scanned_pdf_to_hd_pdf
     from .in_situ_renderer import process_pdf_to_insitu_html
     from .vector_pdf_renderer import process_vector_pdf_with_pdf2zh
 except ImportError:
+    from hd_scan_renderer import process_scanned_pdf_to_hd_pdf
     from in_situ_renderer import process_pdf_to_insitu_html
     from vector_pdf_renderer import process_vector_pdf_with_pdf2zh
 
@@ -98,7 +100,7 @@ def route_and_process_pdf(
     force_mode = cfg.get("force_pipeline", "auto").lower()
     if force_mode in ("vector", "modern"):
         doc_type = "vector"
-    elif force_mode in ("scanned", "historical", "insitu", "opendataloader"):
+    elif force_mode in ("scanned", "historical", "insitu", "insitu_legacy", "legacy_html", "opendataloader"):
         doc_type = "scanned"
     else:
         doc_type = probe_pdf_document_type(pdf_path)
@@ -117,14 +119,9 @@ def route_and_process_pdf(
             pages=pages,
             thread=thread,
         )
-    else:
-        # Track B: In-Situ Dual-Layer HTML (OpenDataLoader-PDF upstream engine)
-        if force_mode == "opendataloader":
-            extractor_engine = "opendataloader"
-        elif force_mode == "scanned" and "upstream_extractor" not in cfg:
-            extractor_engine = "liteparse"
-        else:
-            extractor_engine = cfg.get("upstream_extractor", "opendataloader")
+    elif force_mode in ("insitu_legacy", "legacy_html") or cfg.get("legacy_html_only"):
+        # Explicit legacy in-situ HTML fallback
+        extractor_engine = cfg.get("upstream_extractor", "liteparse")
         html_out = outbox_dir / f"{pdf_path.stem}.原位双层版.html"
         tmp_html = outbox_dir / f".{pdf_path.stem}.原位双层版.html.tmp"
         res_path = process_pdf_to_insitu_html(
@@ -136,3 +133,17 @@ def route_and_process_pdf(
         sz = html_out.stat().st_size if html_out.exists() else 0
         logger.info("已交付原位双层可编辑 HTML: %s (%d bytes)", html_out.name, sz)
         return [html_out]
+    else:
+        # Track B: Publication-Grade High-Definition PDF + In-Situ Dual-Layer HTML
+        extractor_engine = cfg.get("upstream_extractor", "opendataloader")
+        service = cfg.get("pdf2zh_service", "bing")
+        pages = cfg.get("pdf2zh_pages", None) or cfg.get("pages", None)
+
+        return process_scanned_pdf_to_hd_pdf(
+            pdf_path=pdf_path,
+            outbox_dir=outbox_dir,
+            service=service,
+            pages=pages,
+            extractor_engine=extractor_engine,
+            generate_insitu_html=True,
+        )
