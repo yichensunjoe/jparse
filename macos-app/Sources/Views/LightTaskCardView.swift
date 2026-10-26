@@ -14,14 +14,14 @@ public struct LightTaskCardView: View {
         VStack(alignment: .leading, spacing: 12) {
             // Header: Icon, File Name, Metadata, Badges
             HStack(alignment: .top, spacing: 12) {
-                // Status Icon
+                // Status Icon — Circle style
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(task.status.tintColor.opacity(0.12))
+                    Circle()
+                        .fill(task.status.tintColor.opacity(0.10))
                         .frame(width: 36, height: 36)
 
                     Image(systemName: task.status.iconName)
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(task.status.tintColor)
                 }
 
@@ -29,7 +29,7 @@ public struct LightTaskCardView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 8) {
                         Text(task.filename)
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(.system(size: 13, weight: .semibold))
                             .foregroundStyle(LightTheme.textPrimary)
                             .lineLimit(1)
 
@@ -41,7 +41,7 @@ public struct LightTaskCardView: View {
                         }
                     }
 
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Text(task.formattedSize)
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(LightTheme.textSecondary)
@@ -56,7 +56,7 @@ public struct LightTaskCardView: View {
                         if task.duration > 0 {
                             Text("·")
                                 .foregroundStyle(LightTheme.textMuted)
-                            Text(String(format: "耗时 %.1fs", task.duration))
+                            Text(String(format: "%.1fs", task.duration))
                                 .font(.system(size: 11, weight: .medium, design: .monospaced))
                                 .foregroundStyle(LightTheme.accentBlue)
                         }
@@ -66,44 +66,44 @@ public struct LightTaskCardView: View {
                 Spacer()
 
                 // Badges
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     if task.doc_type != "unknown" {
                         Text(task.docTypeBadgeText)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(task.docTypeColor)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 4)
-                            .background(task.docTypeColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(task.docTypeColor.opacity(0.07), in: RoundedRectangle(cornerRadius: LightTheme.radiusBadge))
                             .overlay(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .stroke(task.docTypeColor.opacity(0.20), lineWidth: 1.0)
+                                RoundedRectangle(cornerRadius: LightTheme.radiusBadge)
+                                    .stroke(task.docTypeColor.opacity(0.15), lineWidth: 1.0)
                             )
                     }
 
-                    HStack(spacing: 5) {
+                    HStack(spacing: 4) {
                         Circle()
                             .fill(task.status.tintColor)
-                            .frame(width: 6, height: 6)
+                            .frame(width: 5, height: 5)
                         Text(task.status.localizedDescription)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 10, weight: .medium))
                             .foregroundStyle(task.status.tintColor)
                     }
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 4)
-                    .background(task.status.tintColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(task.status.tintColor.opacity(0.07), in: RoundedRectangle(cornerRadius: LightTheme.radiusBadge))
                 }
             }
 
-            // Progress Bar (when active)
+            // Progress Bar (when active) — Capsule style
             if task.status == .probing || task.status == .processing || task.status == .queued {
                 VStack(alignment: .leading, spacing: 5) {
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 2)
+                            Capsule()
                                 .fill(LightTheme.controlBg)
                                 .frame(height: 4)
 
-                            RoundedRectangle(cornerRadius: 2)
+                            Capsule()
                                 .fill(
                                     LinearGradient(
                                         colors: [LightTheme.accentBlue, Color(red: 0.35, green: 0.60, blue: 1.0)],
@@ -118,7 +118,7 @@ public struct LightTaskCardView: View {
                     .frame(height: 4)
 
                     HStack {
-                        Text(task.status == .probing ? "探测版面拓扑与矢量特征中..." : "进行高清图表裁剪、神经翻译与出版排版中...")
+                        Text(task.status == .probing ? "探测版面拓扑与矢量特征中..." : "高清裁剪、神经翻译与出版排版中...")
                             .font(.system(size: 11))
                             .foregroundStyle(LightTheme.textSecondary)
 
@@ -142,37 +142,38 @@ public struct LightTaskCardView: View {
                 }
                 .padding(10)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(LightTheme.accentRed.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                .background(LightTheme.accentRed.opacity(0.06), in: RoundedRectangle(cornerRadius: LightTheme.radiusBadge))
             }
 
             // Deliverables section (when completed)
             if task.status == .completed && !task.output_files.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("交付产物 / DELIVERABLES")
-                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("交付成果")
+                        .font(.system(size: 10, weight: .bold))
                         .foregroundStyle(LightTheme.textMuted)
+                        .tracking(1)
 
-                    VStack(spacing: 6) {
+                    VStack(spacing: 4) {
                         ForEach(task.output_files) { item in
                             deliverableRow(item: item)
                         }
                     }
                 }
-                .padding(.top, 4)
+                .padding(.top, 2)
             }
         }
-        .padding(16)
+        .padding(14)
         .background(
             isHovered ? LightTheme.cardHover : LightTheme.cardBg,
-            in: RoundedRectangle(cornerRadius: 12)
+            in: RoundedRectangle(cornerRadius: LightTheme.radiusCard)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: LightTheme.radiusCard)
                 .stroke(isHovered ? LightTheme.borderHover : LightTheme.border, lineWidth: 1.0)
         )
         .shadow(
             color: isHovered ? Color.black.opacity(0.06) : LightTheme.shadowColor,
-            radius: isHovered ? 6 : 4,
+            radius: isHovered ? 6 : 3,
             y: 2
         )
         .onHover { hovering in
@@ -186,8 +187,8 @@ public struct LightTaskCardView: View {
     private func deliverableRow(item: OutputFileItem) -> some View {
         HStack(spacing: 10) {
             Image(systemName: item.is_pdf ? "doc.richtext.fill" : "safari.fill")
-                .font(.system(size: 14))
-                .foregroundStyle(item.is_pdf ? LightTheme.accentRed : LightTheme.accentBlue)
+                .font(.system(size: 13))
+                .foregroundStyle(item.is_pdf ? LightTheme.accentRed.opacity(0.8) : LightTheme.accentBlue.opacity(0.8))
 
             Text(item.name)
                 .font(.system(size: 12, weight: .medium))
@@ -195,39 +196,48 @@ public struct LightTaskCardView: View {
                 .lineLimit(1)
 
             if !item.formattedSize.isEmpty {
-                Text("(\(item.formattedSize))")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(LightTheme.textMuted)
+                Text(item.formattedSize)
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(LightTheme.textMuted.opacity(0.7))
             }
 
             Spacer()
 
+            // Ghost-style action buttons
             Button {
                 manager.openFile(path: item.path)
             } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "eye.fill")
+                HStack(spacing: 3) {
+                    Image(systemName: "eye")
                         .font(.system(size: 9))
                     Text("打开")
+                        .font(.system(size: 11, weight: .medium))
                 }
+                .foregroundStyle(LightTheme.accentBlue)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(LightTheme.accentBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: LightTheme.radiusBadge))
             }
             .buttonStyle(.plain)
-            .lightButton(isProminent: true)
 
             Button {
                 manager.revealInFinder(path: item.path)
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 3) {
                     Image(systemName: "folder")
                         .font(.system(size: 9))
                     Text("定位")
+                        .font(.system(size: 11, weight: .medium))
                 }
+                .foregroundStyle(LightTheme.textSecondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(LightTheme.controlBg.opacity(0.6), in: RoundedRectangle(cornerRadius: LightTheme.radiusBadge))
             }
             .buttonStyle(.plain)
-            .lightButton()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(LightTheme.canvasBg, in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(LightTheme.canvasBg.opacity(0.7), in: RoundedRectangle(cornerRadius: LightTheme.radiusButton))
     }
 }

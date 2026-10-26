@@ -3,8 +3,8 @@ import SwiftUI
 public enum LightTheme {
     // Canvas & Backgrounds
     public static let canvasBg = Color(red: 0.965, green: 0.973, blue: 0.984) // #f6f8fb
-    public static let cardBg = Color.white
-    public static let cardHover = Color(red: 0.988, green: 0.992, blue: 1.0)
+    public static let cardBg = Color(red: 0.984, green: 0.988, blue: 1.0)     // #fbfcff 微蓝冷调
+    public static let cardHover = Color(red: 0.976, green: 0.984, blue: 0.996)
     public static let controlBg = Color(red: 0.925, green: 0.937, blue: 0.953) // #eceff4
     public static let pillActiveBg = Color.white
 
@@ -24,6 +24,11 @@ public enum LightTheme {
     public static let borderHover = Color.black.opacity(0.12)
     public static let borderStrong = Color.black.opacity(0.18)
     public static let shadowColor = Color.black.opacity(0.04)
+
+    // Unified Corner Radii (三级梯度)
+    public static let radiusCard: CGFloat = 10
+    public static let radiusButton: CGFloat = 8
+    public static let radiusBadge: CGFloat = 6
 }
 
 public struct LightButtonModifier: ViewModifier {
@@ -66,9 +71,9 @@ public struct LightButtonModifier: ViewModifier {
             .foregroundStyle(fgColor)
             .padding(.horizontal, 13)
             .padding(.vertical, 7)
-            .background(bgColor, in: RoundedRectangle(cornerRadius: 7))
+            .background(bgColor, in: RoundedRectangle(cornerRadius: LightTheme.radiusButton))
             .overlay(
-                RoundedRectangle(cornerRadius: 7)
+                RoundedRectangle(cornerRadius: LightTheme.radiusButton)
                     .stroke(strokeColor, lineWidth: 1.0)
             )
             .shadow(color: isProminent ? LightTheme.accentBlue.opacity(0.18) : LightTheme.shadowColor, radius: 3, x: 0, y: 1)

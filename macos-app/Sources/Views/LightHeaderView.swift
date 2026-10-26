@@ -9,41 +9,32 @@ public struct LightHeaderView: View {
 
     public var body: some View {
         HStack(spacing: 16) {
-            // Left: Brand
-            HStack(spacing: 10) {
+            // Left: Slim Brand
+            HStack(spacing: 9) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 8)
+                    RoundedRectangle(cornerRadius: 7)
                         .fill(
                             LinearGradient(
-                                colors: [LightTheme.accentBlue, Color(red: 0.25, green: 0.55, blue: 1.0)],
+                                colors: [LightTheme.accentBlue, Color(red: 0.30, green: 0.58, blue: 1.0)],
                                 startPoint: .topLeading,
                                 endPoint: .bottomTrailing
                             )
                         )
-                        .frame(width: 28, height: 28)
+                        .frame(width: 26, height: 26)
 
-                    Image(systemName: "sparkles.rectangle.stack.fill")
-                        .font(.system(size: 14, weight: .bold))
+                    Image(systemName: "text.document.fill")
+                        .font(.system(size: 13, weight: .bold))
                         .foregroundStyle(.white)
                 }
 
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 6) {
-                        Text("LiteParse Studio")
-                            .font(.system(size: 14, weight: .bold, design: .rounded))
-                            .foregroundStyle(LightTheme.textPrimary)
+                HStack(alignment: .firstTextBaseline, spacing: 5) {
+                    Text("LiteParse Studio")
+                        .font(.system(size: 14, weight: .semibold, design: .rounded))
+                        .foregroundStyle(LightTheme.textPrimary)
 
-                        Text("2.0")
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(LightTheme.accentBlue)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 1.5)
-                            .background(LightTheme.accentBlue.opacity(0.10), in: Capsule())
-                    }
-
-                    Text("双轨学术文献重构工作台")
-                        .font(.system(size: 10))
-                        .foregroundStyle(LightTheme.textSecondary)
+                    Text("2.0")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .foregroundStyle(LightTheme.textMuted)
                 }
             }
 
@@ -70,7 +61,7 @@ public struct LightHeaderView: View {
                         .padding(.vertical, 5)
                         .background(
                             isSelected ? LightTheme.pillActiveBg : Color.clear,
-                            in: RoundedRectangle(cornerRadius: 6)
+                            in: RoundedRectangle(cornerRadius: LightTheme.radiusBadge)
                         )
                         .shadow(color: isSelected ? Color.black.opacity(0.06) : Color.clear, radius: 2, y: 1)
                     }
@@ -78,7 +69,7 @@ public struct LightHeaderView: View {
                 }
             }
             .padding(3)
-            .background(LightTheme.controlBg, in: RoundedRectangle(cornerRadius: 8))
+            .background(LightTheme.controlBg, in: RoundedRectangle(cornerRadius: LightTheme.radiusButton))
 
             Spacer()
 
@@ -95,9 +86,9 @@ public struct LightHeaderView: View {
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 5)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 6))
+                .background(LightTheme.cardBg, in: RoundedRectangle(cornerRadius: LightTheme.radiusBadge))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: LightTheme.radiusBadge)
                         .stroke(LightTheme.border, lineWidth: 1.0)
                 )
 
@@ -131,8 +122,8 @@ public struct LightHeaderView: View {
             }
         }
         .padding(.horizontal, 22)
-        .padding(.vertical, 12)
-        .background(Color.white)
+        .padding(.vertical, 10)
+        .background(LightTheme.cardBg)
         .overlay(
             Rectangle()
                 .frame(height: 1)

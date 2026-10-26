@@ -14,7 +14,7 @@ public struct LightContentView: View {
 
             // 2. Main Scrollable Workspace
             ScrollView(.vertical, showsIndicators: true) {
-                VStack(alignment: .leading, spacing: 18) {
+                VStack(alignment: .leading, spacing: 16) {
                     // Drop Zone
                     LightDropZoneView(manager: manager)
 
@@ -28,12 +28,12 @@ public struct LightContentView: View {
                                 .foregroundStyle(LightTheme.accentBlue)
                             Spacer()
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(LightTheme.accentBlue.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(LightTheme.accentBlue.opacity(0.06), in: RoundedRectangle(cornerRadius: LightTheme.radiusButton))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(LightTheme.accentBlue.opacity(0.20), lineWidth: 1.0)
+                            RoundedRectangle(cornerRadius: LightTheme.radiusButton)
+                                .stroke(LightTheme.accentBlue.opacity(0.15), lineWidth: 1.0)
                         )
                     }
 
@@ -55,34 +55,34 @@ public struct LightContentView: View {
                             }
                             .buttonStyle(.plain)
                         }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(LightTheme.accentAmber.opacity(0.10), in: RoundedRectangle(cornerRadius: 8))
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(LightTheme.accentAmber.opacity(0.08), in: RoundedRectangle(cornerRadius: LightTheme.radiusButton))
                         .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(LightTheme.accentAmber.opacity(0.25), lineWidth: 1.0)
+                            RoundedRectangle(cornerRadius: LightTheme.radiusButton)
+                                .stroke(LightTheme.accentAmber.opacity(0.20), lineWidth: 1.0)
                         )
                     }
 
                     // Section Bar: Title & Translation Engine Switcher
                     HStack(alignment: .center) {
-                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
                             Text("文献流水线")
-                                .font(.system(size: 14, weight: .bold))
+                                .font(.system(size: 13, weight: .semibold))
                                 .foregroundStyle(LightTheme.textPrimary)
 
-                            Text("(\(manager.tasks.count))")
-                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            Text("\(manager.tasks.count)")
+                                .font(.system(size: 11, weight: .medium, design: .monospaced))
                                 .foregroundStyle(LightTheme.textMuted)
                         }
 
                         Spacer()
 
-                        // Translation Engine Switcher (Compact Raycast style)
+                        // Translation Engine Switcher
                         HStack(spacing: 4) {
-                            Text("翻译引擎:")
+                            Text("翻译:")
                                 .font(.system(size: 11))
-                                .foregroundStyle(LightTheme.textSecondary)
+                                .foregroundStyle(LightTheme.textMuted)
 
                             ForEach(TranslationService.allCases) { srv in
                                 let isSelected = manager.selectedService == srv
@@ -93,36 +93,36 @@ public struct LightContentView: View {
                                     }
                                 } label: {
                                     Text(srv.shortTitle)
-                                        .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                                        .font(.system(size: 11, weight: isSelected ? .medium : .regular))
                                         .foregroundStyle(isSelected ? LightTheme.accentBlue : LightTheme.textSecondary)
                                         .padding(.horizontal, 8)
-                                        .padding(.vertical, 3.5)
+                                        .padding(.vertical, 3)
                                         .background(
                                             isSelected ? Color.white : Color.clear,
                                             in: RoundedRectangle(cornerRadius: 5)
                                         )
-                                        .shadow(color: isSelected ? Color.black.opacity(0.06) : Color.clear, radius: 1, y: 1)
+                                        .shadow(color: isSelected ? Color.black.opacity(0.05) : Color.clear, radius: 1, y: 1)
                                 }
                                 .buttonStyle(.plain)
                             }
                         }
                         .padding(3)
-                        .background(LightTheme.controlBg, in: RoundedRectangle(cornerRadius: 7))
+                        .background(LightTheme.controlBg, in: RoundedRectangle(cornerRadius: LightTheme.radiusButton))
                     }
-                    .padding(.top, 4)
+                    .padding(.top, 2)
 
                     // Task List or Empty Placeholder
                     if manager.tasks.isEmpty {
                         emptyStateView
                     } else {
-                        LazyVStack(spacing: 12) {
+                        LazyVStack(spacing: 10) {
                             ForEach(manager.tasks) { task in
                                 LightTaskCardView(task: task, manager: manager)
                             }
                         }
                     }
                 }
-                .padding(22)
+                .padding(20)
             }
 
             // 3. Bottom Footer
@@ -132,34 +132,60 @@ public struct LightContentView: View {
     }
 
     private var emptyStateView: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
+            // Stacked documents illustration
             ZStack {
-                Circle()
-                    .fill(Color.white)
-                    .frame(width: 56, height: 56)
-                    .shadow(color: LightTheme.shadowColor, radius: 4, y: 2)
+                // Back doc — rotated
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(LightTheme.controlBg.opacity(0.6))
+                    .frame(width: 34, height: 42)
+                    .rotationEffect(.degrees(-8))
+                    .offset(x: -6, y: 3)
 
-                Image(systemName: "tray")
-                    .font(.system(size: 24))
-                    .foregroundStyle(LightTheme.textMuted)
+                // Mid doc
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(LightTheme.controlBg.opacity(0.8))
+                    .frame(width: 34, height: 42)
+                    .rotationEffect(.degrees(4))
+                    .offset(x: 4, y: 1)
+
+                // Front doc
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Color.white)
+                    .frame(width: 34, height: 42)
+                    .shadow(color: LightTheme.shadowColor, radius: 3, y: 2)
+                    .overlay(
+                        VStack(spacing: 3) {
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(LightTheme.accentBlue.opacity(0.25))
+                                .frame(width: 18, height: 2)
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(LightTheme.controlBg)
+                                .frame(width: 22, height: 2)
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(LightTheme.controlBg)
+                                .frame(width: 16, height: 2)
+                        }
+                    )
             }
+            .frame(width: 60, height: 52)
 
             VStack(spacing: 4) {
-                Text("当前转换队列为空")
+                Text("拖入文献，即刻重构")
                     .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(LightTheme.textPrimary)
 
-                Text("拖入学术论文（MDPI/IEEE/Springer）或图书扫描件，即刻分流并生成高清成果")
+                Text("支持 MDPI · IEEE · Springer 矢量论文与历史扫描专著")
                     .font(.system(size: 12))
                     .foregroundStyle(LightTheme.textSecondary)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 56)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 12))
+        .padding(.vertical, 48)
+        .background(LightTheme.cardBg, in: RoundedRectangle(cornerRadius: LightTheme.radiusCard))
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(LightTheme.border, lineWidth: 1.0)
+            RoundedRectangle(cornerRadius: LightTheme.radiusCard)
+                .stroke(LightTheme.border, style: StrokeStyle(lineWidth: 1.0, dash: [6, 4]))
         )
     }
 }

@@ -2,6 +2,7 @@ import SwiftUI
 
 public struct LightFooterView: View {
     @ObservedObject var manager: BackendManager
+    @State private var clearHovered = false
 
     public init(manager: BackendManager) {
         self.manager = manager
@@ -11,24 +12,24 @@ public struct LightFooterView: View {
         let completedCount = manager.tasks.filter { $0.status == .completed }.count
         let processingCount = manager.tasks.filter { $0.status == .processing || $0.status == .probing || $0.status == .queued }.count
 
-        HStack(spacing: 16) {
-            // Privacy assurance
-            HStack(spacing: 6) {
+        HStack(spacing: 14) {
+            // Privacy assurance — friendlier copy
+            HStack(spacing: 5) {
                 Image(systemName: "checkmark.shield.fill")
-                    .font(.system(size: 12))
-                    .foregroundStyle(LightTheme.accentGreen)
-
-                Text("100% 本地离线处理 · 零云端留存 · 确定性原子替换")
                     .font(.system(size: 11))
-                    .foregroundStyle(LightTheme.textSecondary)
+                    .foregroundStyle(LightTheme.accentGreen.opacity(0.8))
+
+                Text("100% 本地离线 · 数据不出本机")
+                    .font(.system(size: 11))
+                    .foregroundStyle(LightTheme.textMuted)
             }
 
             Spacer()
 
             // Active counts & actions
-            HStack(spacing: 12) {
+            HStack(spacing: 10) {
                 if processingCount > 0 {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 4) {
                         ProgressView()
                             .controlSize(.mini)
                         Text("\(processingCount) 项转换中")
@@ -37,9 +38,9 @@ public struct LightFooterView: View {
                     }
                 }
 
-                Text("总计 \(manager.tasks.count) 项 · 已完成 \(completedCount) 项")
+                Text("总计 \(manager.tasks.count) 丨已完成 \(completedCount)")
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(LightTheme.textSecondary)
+                    .foregroundStyle(LightTheme.textMuted)
 
                 if completedCount > 0 {
                     Button {
@@ -48,9 +49,12 @@ public struct LightFooterView: View {
                         }
                     } label: {
                         Text("清空完成")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(clearHovered ? LightTheme.accentRed : LightTheme.textMuted)
                     }
                     .buttonStyle(.plain)
-                    .lightButton()
+                    .onHover { h in clearHovered = h }
+                    .opacity(clearHovered ? 1.0 : 0.7)
                 }
 
                 Button {
@@ -58,14 +62,14 @@ public struct LightFooterView: View {
                 } label: {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 11))
+                        .foregroundStyle(LightTheme.textMuted)
                 }
                 .buttonStyle(.plain)
-                .lightButton()
             }
         }
-        .padding(.horizontal, 22)
-        .padding(.vertical, 10)
-        .background(Color.white)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
+        .background(LightTheme.cardBg)
         .overlay(
             Rectangle()
                 .frame(height: 1)
