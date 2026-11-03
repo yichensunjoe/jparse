@@ -60,7 +60,7 @@ class WatcherTests(unittest.TestCase):
     def tearDown(self):
         self.temporary.cleanup()
 
-    def make_config(self, behavior="digital"):
+    def make_config(self, behavior="digital", **overrides):
         fake_lit = self.root / "fake-lit"
         fake_lit.write_text(FAKE_LIT_TEMPLATE.format(behavior=behavior), encoding="utf-8")
         fake_lit.chmod(0o755)
@@ -87,6 +87,7 @@ class WatcherTests(unittest.TestCase):
             "reflow_markdown": True,
             "scan_book_mode": False,
         }
+        raw.update(overrides)
         config_path = self.root / "config.json"
         config_path.write_text(json.dumps(raw), encoding="utf-8")
         return Config(config_path)
@@ -497,6 +498,59 @@ Owner Alice Bob
         self.assertIn("APA 液位", normalized)
         self.assertIn("股份有限公司", normalized)
         self.assertIn("故障保护研究，结论", normalized)
+
+    def test_dual_track_deliverables_reserve_the_stem(self):
+        config = self.make_config(dual_track_mode="auto")
+        watcher = Watcher(config, self.logger)
+        (config.outbox / "paper-中文精译版.pdf").write_bytes(b"%PDF old")
+        self.assertFalse(watcher._stem_available("paper"))
+        self.assertEqual(watcher._reserve_stem("paper"), "paper-2")
+
+    def test_same_stem_different_document_is_reprocessed_not_skipped(self):
+        config = self.make_config(dual_track_mode="auto")
+        watcher = Watcher(config, self.logger)
+        source = config.processing / "doc.pdf"
+        source.write_bytes(b"%PDF-1.4 version one")
+        stale = config.outbox / "doc-中文精译版.pdf"
+        stale.write_bytes(b"%PDF half delivered")
+        calls = []
+
+        def fake_route(pdf_path, outbox_dir, config=None):
+            calls.append(Path(pdf_path).name)
+            output = Path(outbox_dir) / "doc-中文精译版.pdf"
+            output.write_bytes(b"%PDF freshly translated")
+            return [output]
+
+        with patch("src.router.route_and_process_pdf", side_effect=fake_route):
+            watcher.process(source)
+
+        self.assertEqual(calls, ["doc.pdf"])
+        self.assertEqual(stale.read_bytes(), b"%PDF freshly translated")
+        self.assertFalse(source.exists())
+        self.assertTrue((config.processed / "doc.pdf").exists())
+        self.assertTrue(watcher._manifest_path("doc").exists())
+
+    def test_completed_manifest_skips_reprocessing(self):
+        config = self.make_config(dual_track_mode="auto")
+        watcher = Watcher(config, self.logger)
+        source = config.processing / "done.pdf"
+        source.write_bytes(b"%PDF-1.4 finished")
+        watcher._write_manifest(source, [config.outbox / "done-中文精译版.pdf"])
+
+        with patch("src.router.route_and_process_pdf") as route:
+            watcher.process(source)
+
+        route.assert_not_called()
+        self.assertFalse(source.exists())
+        self.assertTrue((config.processed / "done.pdf").exists())
+
+    def test_stale_half_delivery_without_manifest_is_cleaned(self):
+        config = self.make_config(dual_track_mode="auto")
+        watcher = Watcher(config, self.logger)
+        mono = config.outbox / "half-中文精译版.pdf"
+        mono.write_bytes(b"%PDF partial")
+        watcher._clear_stale_deliverables("half")
+        self.assertFalse(mono.exists())
 
 
 if __name__ == "__main__":

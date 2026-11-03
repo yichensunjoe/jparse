@@ -3,6 +3,7 @@
 
 import argparse
 import fcntl
+import hashlib
 import json
 import logging
 from logging.handlers import RotatingFileHandler
@@ -162,7 +163,10 @@ class Config:
         if self.paddleocr_workers < 1:
             raise ConfigError("paddleocr_workers 不得小于 1")
 
-        self.translate_literature = bool(raw.get("translate_literature", False))
+        raw_translate = raw.get("translate_literature", False)
+        if not isinstance(raw_translate, bool):
+            raise ConfigError("translate_literature 必须为 true 或 false")
+        self.translate_literature = raw_translate
         translation_model = raw.get("translation_model_dir", "assets/models/translation")
         self.translation_model_dir = (
             _project_path(self.root, translation_model, "translation_model_dir")
@@ -170,11 +174,10 @@ class Config:
         )
         self.translation_batch_size = int(raw.get("translation_batch_size", 32))
         self.translation_beam_size = int(raw.get("translation_beam_size", 4))
-        self.translation_bilingual = bool(raw.get("translation_bilingual", False))
-        if not isinstance(self.translate_literature, bool):
-            raise ConfigError("translate_literature 必须为 true 或 false")
-        if not isinstance(self.translation_bilingual, bool):
+        raw_bilingual = raw.get("translation_bilingual", False)
+        if not isinstance(raw_bilingual, bool):
             raise ConfigError("translation_bilingual 必须为 true 或 false")
+        self.translation_bilingual = raw_bilingual
         if self.translation_batch_size < 1:
             raise ConfigError("translation_batch_size 不得小于 1")
         if self.translation_beam_size < 1:
@@ -184,6 +187,13 @@ class Config:
         if self.dual_track_mode not in {"disabled", "auto", "vector", "scanned"}:
             raise ConfigError("dual_track_mode 仅支持 disabled、auto、vector 或 scanned")
         self.pdf2zh_service = str(raw.get("pdf2zh_service", "bing")).lower()
+
+        self.log_max_bytes = int(raw.get("log_max_bytes", 1024 * 1024))
+        self.log_backup_count = int(raw.get("log_backup_count", 3))
+        if not 64 * 1024 <= self.log_max_bytes <= 64 * 1024 * 1024:
+            raise ConfigError("log_max_bytes 必须在 64KB 到 64MB 之间")
+        if not 1 <= self.log_backup_count <= 20:
+            raise ConfigError("log_backup_count 必须在 1 到 20 之间")
 
     @property
     def output_extension(self) -> str:
@@ -209,15 +219,17 @@ class Config:
         )
 
 
-def setup_logging(log_dir: Path) -> logging.Logger:
+def setup_logging(
+    log_dir: Path, max_bytes: int = 1024 * 1024, backup_count: int = 3
+) -> logging.Logger:
     log_dir.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger("liteparse_pdf_watcher")
     logger.setLevel(logging.INFO)
     logger.handlers.clear()
     handler = RotatingFileHandler(
         log_dir / "watcher.log",
-        maxBytes=1024 * 1024,
-        backupCount=3,
+        maxBytes=max_bytes,
+        backupCount=backup_count,
         encoding="utf-8",
     )
     handler.setFormatter(
@@ -453,6 +465,17 @@ class Watcher:
                 [
                     self.config.outbox / (stem + ".md"),
                     self.config.outbox / (stem + "_assets"),
+                ]
+            )
+        if self.config.dual_track_mode != "disabled":
+            # 双轨产物用固定文件名，必须纳入占号，否则同名不同文档会互相覆盖。
+            occupied.extend(
+                [
+                    self.config.outbox / (stem + "-中文精译版.pdf"),
+                    self.config.outbox / (stem + "-双语对照版.pdf"),
+                    self.config.outbox / (stem + ".mono.pdf"),
+                    self.config.outbox / (stem + ".原位双层版.html"),
+                    self.config.outbox / (".%s.manifest.json" % stem),
                 ]
             )
         return not any(path.exists() for path in occupied)
@@ -923,6 +946,68 @@ class Watcher:
         os.replace(str(source), str(destination))
         return destination
 
+    def _manifest_path(self, stem: str) -> Path:
+        return self.config.outbox / (".%s.manifest.json" % stem)
+
+    @staticmethod
+    def _file_sha256(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _write_manifest(self, source: Path, outputs) -> None:
+        """Record what was actually delivered, so success is not inferred from
+        the mere existence of a file that happened to survive a crash."""
+        manifest = {
+            "version": 1,
+            "source_name": source.name,
+            "source_sha256": self._file_sha256(source),
+            "completed_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "outputs": [Path(p).name for p in outputs if p],
+        }
+        target = self._manifest_path(source.stem)
+        staged = self.config.outbox / (".%s.manifest.json.tmp" % source.stem)
+        try:
+            staged.write_text(
+                json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+            os.replace(str(staged), str(target))
+        except OSError as exc:
+            self.logger.error("写入完成标记失败（产物已交付）：%s：%s", source.name, exc)
+            staged.unlink(missing_ok=True)
+
+    def _completed_by_manifest(self, source: Path) -> bool:
+        try:
+            manifest = json.loads(self._manifest_path(source.stem).read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return False
+        recorded = manifest.get("source_sha256")
+        if not recorded:
+            return False
+        try:
+            return recorded == self._file_sha256(source)
+        except OSError:
+            return False
+
+    def _clear_stale_deliverables(self, stem: str) -> None:
+        """Remove half-delivered outputs left by a killed run (no manifest)."""
+        stale = [
+            self.config.outbox / (stem + "-中文精译版.pdf"),
+            self.config.outbox / (stem + "-双语对照版.pdf"),
+            self.config.outbox / (stem + ".mono.pdf"),
+            self.config.outbox / (stem + ".原位双层版.html"),
+        ]
+        removed = [path for path in stale if path.exists()]
+        for path in removed:
+            remove_path(path)
+        if removed:
+            self.logger.warning(
+                "清理上次未完成的半交付产物（无完成标记）：%s",
+                ", ".join(path.name for path in removed),
+            )
+
     def _archive_failure(self, source: Path, error: str) -> Path:
         destination = unique_path(self.config.failed, source.name)
         os.replace(str(source), str(destination))
@@ -938,12 +1023,13 @@ class Watcher:
             source.stem + "." + self.config.output_extension
         )
         if self.config.dual_track_mode != "disabled":
-            mono_hd = self.config.outbox / f"{source.stem}-中文精译版.pdf"
-            mono_legacy = self.config.outbox / f"{source.stem}.mono.pdf"
-            if mono_hd.exists() or mono_legacy.exists():
+            if self._completed_by_manifest(source):
                 archived = self._archive_success(source)
-                self.logger.warning("检测到已完成双轨出版级输出，仅恢复归档：%s", archived.name)
+                self.logger.warning(
+                    "检测到已完成双轨输出（完成标记校验一致），仅恢复归档：%s", archived.name
+                )
                 return
+            self._clear_stale_deliverables(source.stem)
         else:
             if output.exists():
                 archived = self._archive_success(source)
@@ -965,6 +1051,7 @@ class Watcher:
                         "upstream_extractor": getattr(self.config, "upstream_extractor", "opendataloader"),
                     },
                 )
+                self._write_manifest(source, outputs)
                 archived = self._archive_success(source)
                 output_names = ", ".join(p.name for p in outputs)
                 self.logger.info("双轨智能识别完成：%s -> %s", archived.name, output_names)
@@ -1111,7 +1198,7 @@ def main() -> int:
         print("健康检查通过：%s" % version)
         return 0
 
-    logger = setup_logging(config.logs)
+    logger = setup_logging(config.logs, config.log_max_bytes, config.log_backup_count)
     lock_handle = acquire_lock(config.logs / "watcher.lock")
     if lock_handle is None:
         logger.warning("已有一个监控进程在运行")

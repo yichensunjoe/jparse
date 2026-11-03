@@ -7,8 +7,11 @@ struct LiteParseGlassApp: App {
     var body: some Scene {
         WindowGroup {
             MainContentView()
+                .preferredColorScheme(.light)
+                .background(LightTheme.canvasBg)
         }
         .windowStyle(.hiddenTitleBar)
+        .windowBackgroundDragBehavior(.enabled)
         .defaultSize(width: 1000, height: 760)
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -35,6 +38,10 @@ struct LiteParseGlassApp: App {
                 }
                 .keyboardShortcut("k", modifiers: [.command])
             }
+        }
+
+        Settings {
+            SettingsView()
         }
     }
 }

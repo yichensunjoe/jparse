@@ -106,20 +106,16 @@ def stop():
 def status():
     pid = current_pid()
     print("运行状态：%s" % ("正在运行（进程 %d）" % pid if pid else "未运行"))
-    try:
-        output_format = json.loads(CONFIG.read_text(encoding="utf-8")).get("output_format", "html")
-    except (OSError, json.JSONDecodeError):
-        output_format = "html"
-    output_suffix = {"html": ".html", "markdown": ".md", "text": ".txt"}.get(output_format, ".html")
-    for label, folder, suffix in (
-        ("待处理", ROOT / "inbox", ".pdf"),
-        ("已输出", ROOT / "outbox", output_suffix),
-        ("失败", ROOT / "failed", ".pdf"),
+    # 双轨模式产出的是 PDF，单轨是 HTML/MD；按真实产物后缀统计，勿只看 .html。
+    for label, folder, suffixes in (
+        ("待处理", ROOT / "inbox", (".pdf",)),
+        ("已输出", ROOT / "outbox", (".pdf", ".html", ".md")),
+        ("失败", ROOT / "failed", (".pdf",)),
     ):
         count = sum(
             1
             for item in folder.iterdir()
-            if item.is_file() and item.suffix.lower() == suffix
+            if item.is_file() and item.suffix.lower() in suffixes
         )
         print("%s：%d" % (label, count))
     log_path = LOGS / "watcher.log"

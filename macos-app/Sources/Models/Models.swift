@@ -20,11 +20,11 @@ public enum TaskStatus: String, Codable {
 
     public var tintColor: Color {
         switch self {
-        case .queued: return .secondary
-        case .probing: return .blue
-        case .processing: return .cyan
-        case .completed: return .green
-        case .failed: return .red
+        case .queued: return LightTheme.textMuted
+        case .probing: return LightTheme.statusProbing
+        case .processing: return LightTheme.statusProcessing
+        case .completed: return LightTheme.accentGreen
+        case .failed: return LightTheme.accentRed
         }
     }
 
@@ -78,19 +78,19 @@ public struct TaskItem: Codable, Identifiable, Hashable {
 
     public var docTypeBadgeText: String {
         switch doc_type.lowercased() {
-        case "vector": return "现代矢量学术"
-        case "scanned": return "扫描专著高清"
-        case "insitu": return "原位双层重构"
+        case "vector": return "矢量学术"
+        case "scanned": return "扫描专著"
+        case "insitu": return "原位双层"
         default: return "智能探测中"
         }
     }
 
     public var docTypeColor: Color {
         switch doc_type.lowercased() {
-        case "vector": return .green
-        case "scanned": return .orange
-        case "insitu": return .indigo
-        default: return .blue
+        case "vector": return LightTheme.accentGreen
+        case "scanned": return LightTheme.accentAmber
+        case "insitu": return LightTheme.accentIndigo
+        default: return LightTheme.accentBlue
         }
     }
 }
@@ -103,6 +103,16 @@ public enum PipelineMode: String, CaseIterable, Identifiable {
 
     public var id: String { rawValue }
 
+    /// 保留已保存的 rawValue，同时向路由器发送它实际支持的模式名。
+    public var requestValue: String {
+        switch self {
+        case .auto: return "auto"
+        case .hdScan: return "scanned"
+        case .vector: return "vector"
+        case .inSitu: return "insitu_legacy"
+        }
+    }
+
     public var title: String {
         switch self {
         case .auto: return "智能双轨自动路由"
@@ -114,10 +124,10 @@ public enum PipelineMode: String, CaseIterable, Identifiable {
 
     public var shortTitle: String {
         switch self {
-        case .auto: return "⚡️ 智能双轨"
-        case .hdScan: return "💎 高清扫描"
-        case .vector: return "📐 矢量排版"
-        case .inSitu: return "🌐 原位双层"
+        case .auto: return "智能双轨"
+        case .hdScan: return "高清扫描"
+        case .vector: return "矢量排版"
+        case .inSitu: return "原位双层"
         }
     }
 
@@ -132,17 +142,16 @@ public enum PipelineMode: String, CaseIterable, Identifiable {
 
     public var iconName: String {
         switch self {
-        case .auto: return "bolt.shield.fill"
+        case .auto: return "bolt.fill"
         case .hdScan: return "photo.stack.fill"
-        case .vector: return "skew"
-        case .inSitu: return "globe.desk.fill"
+        case .vector: return "text.alignleft"
+        case .inSitu: return "globe"
         }
     }
 }
 
 public enum TranslationService: String, CaseIterable, Identifiable {
     case bing = "bing"
-    case offline = "offline"
     case google = "google"
 
     public var id: String { rawValue }
@@ -150,23 +159,20 @@ public enum TranslationService: String, CaseIterable, Identifiable {
     public var title: String {
         switch self {
         case .bing: return "Bing 神经翻译（推荐）"
-        case .offline: return "离线 CTranslate2 本地模型"
         case .google: return "Google 翻译"
         }
     }
 
     public var shortTitle: String {
         switch self {
-        case .bing: return "🌐 Bing 云端"
-        case .offline: return "💻 离线离网"
-        case .google: return "🌍 Google"
+        case .bing: return "Bing"
+        case .google: return "Google"
         }
     }
 
     public var subtitle: String {
         switch self {
         case .bing: return "高保真句意表达，内建多粒度分块保护与核化工领域术语库"
-        case .offline: return "100% 离线本地 INT8 神经模型，绝对保密，无网络消耗"
         case .google: return "备选通用多语言引擎"
         }
     }
@@ -192,12 +198,32 @@ public enum BackendConnectionStatus: Equatable {
         }
     }
 
+    /// 顶栏胶囊用的短文案：状态必须真实，不能永远显示“就绪”。
+    public var shortLabel: String {
+        switch self {
+        case .disconnected: return "本地引擎未连接"
+        case .connecting: return "正在启动引擎"
+        case .connected: return "本地引擎就绪"
+        case .error: return "引擎异常"
+        }
+    }
+
+    /// 窄窗口下的极简文案。
+    public var compactLabel: String {
+        switch self {
+        case .disconnected: return "未连接"
+        case .connecting: return "启动中"
+        case .connected: return "就绪"
+        case .error: return "异常"
+        }
+    }
+
     public var indicatorColor: Color {
         switch self {
-        case .disconnected: return .gray
-        case .connecting: return .orange
-        case .connected: return .green
-        case .error: return .red
+        case .disconnected: return LightTheme.textMuted
+        case .connecting: return LightTheme.accentAmber
+        case .connected: return LightTheme.accentGreen
+        case .error: return LightTheme.accentRed
         }
     }
 }

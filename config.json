@@ -5,6 +5,8 @@
   "processed": "processed",
   "failed": "failed",
   "logs": "logs",
+  "log_max_bytes": 1048576,
+  "log_backup_count": 3,
   "poll_interval_seconds": 2,
   "settle_seconds": 5,
   "output_format": "html",

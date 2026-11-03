@@ -8,15 +8,23 @@ public final class BackendManager: ObservableObject {
 
     @Published public var connectionStatus: BackendConnectionStatus = .disconnected
     @Published public var tasks: [TaskItem] = []
-    @Published public var selectedPipeline: PipelineMode = .auto
-    @Published public var selectedService: TranslationService = .bing
+    @Published public var selectedPipeline: PipelineMode = .auto {
+        didSet { AppSettings.shared.defaultPipeline = selectedPipeline }
+    }
+    @Published public var selectedService: TranslationService = .bing {
+        didSet { AppSettings.shared.defaultService = selectedService }
+    }
     @Published public var isUploading: Bool = false
     @Published public var uploadStatusMessage: String = ""
     @Published public var errorMessage: String? = nil
+    @Published public private(set) var isSyncingOutputFolder: Bool = false
+    @Published public private(set) var outputFolderError: String? = nil
 
     private var pollTimer: Timer?
     private var backendProcess: Process?
-    public let serverPort: Int = 8765
+    private var lastSyncedOutputFolder: String?
+    private var dismissedCompletedIDs: Set<String> = []
+    public let serverPort: Int
     public var serverBaseURL: URL {
         URL(string: "http://127.0.0.1:\(serverPort)")!
     }
@@ -35,8 +43,29 @@ public final class BackendManager: ObservableObject {
         return currentDir
     }
 
-    public init() {
-        startPolling()
+    public var defaultOutboxPath: String {
+        (projectRootPath as NSString).appendingPathComponent("outbox")
+    }
+
+    public var outputFolderPath: String {
+        let custom = AppSettings.shared.outputFolderPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        return custom.isEmpty ? defaultOutboxPath : custom
+    }
+
+    public var outputFolderDisplayPath: String {
+        (outputFolderPath as NSString).abbreviatingWithTildeInPath
+    }
+
+    public var isUsingCustomOutputFolder: Bool {
+        !AppSettings.shared.outputFolderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    public init(serverPort: Int = 8765, startPolling: Bool = true) {
+        self.serverPort = serverPort
+        // 恢复上次的设置；首次启动保持项目默认 outbox。
+        selectedPipeline = AppSettings.shared.defaultPipeline
+        selectedService = AppSettings.shared.defaultService
+        if startPolling { self.startPolling() }
     }
 
     deinit {
@@ -73,6 +102,9 @@ public final class BackendManager: ObservableObject {
                     if connectionStatus != .connected(port: serverPort) {
                         connectionStatus = .connected(port: serverPort)
                     }
+                    // 输出目录只存在 App 的 UserDefaults 里；每次连上/重连后
+                    // 都要重放给后台，后台重启也不会悄悄回到旧目录。
+                    syncOutputFolderIfNeeded()
                     refreshTasks()
                 } else {
                     handleConnectionFailure()
@@ -87,6 +119,7 @@ public final class BackendManager: ObservableObject {
         if case .connected = connectionStatus {
             connectionStatus = .disconnected
         }
+        lastSyncedOutputFolder = nil
         // Auto-launch local python server if not running
         launchPythonBackendIfNeeded()
     }
@@ -165,18 +198,27 @@ public final class BackendManager: ObservableObject {
             do {
                 let (data, response) = try await URLSession.shared.data(for: request)
                 guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
+                    self.connectionStatus = .disconnected
+                    self.lastSyncedOutputFolder = nil
                     return
                 }
                 let decoder = JSONDecoder()
                 let fetchedTasks = try decoder.decode([TaskItem].self, from: data)
-                self.tasks = fetchedTasks
+                self.dismissedCompletedIDs.formIntersection(Set(fetchedTasks.map(\.id)))
+                let visibleTasks = fetchedTasks.filter { !self.dismissedCompletedIDs.contains($0.id) }
+                // 等值不发布，避免每秒轮询时滚动条反复抖动。
+                if visibleTasks != self.tasks {
+                    self.tasks = visibleTasks
+                }
                 if case .connected = self.connectionStatus {
                     // stays connected
                 } else {
                     self.connectionStatus = .connected(port: self.serverPort)
                 }
+                self.syncOutputFolderIfNeeded()
             } catch {
-                // If fetching tasks failed, ping health
+                self.connectionStatus = .disconnected
+                self.lastSyncedOutputFolder = nil
             }
         }
     }
@@ -184,28 +226,35 @@ public final class BackendManager: ObservableObject {
     // MARK: - File Drag & Upload Processing
 
     public func handleDroppedURLs(_ urls: [URL]) {
+        guard !isUploading else {
+            errorMessage = "正在添加上一批文献，请完成后再导入。"
+            return
+        }
         let pdfs = collectPDFs(from: urls)
         guard !pdfs.isEmpty else {
             errorMessage = "未找到可处理的 PDF 文档。请拖入 .pdf 文件或包含 PDF 的文件夹。"
             return
         }
 
+        let pipeline = selectedPipeline
+        let service = selectedService
         errorMessage = nil
         isUploading = true
-        uploadStatusMessage = "正在批量添加 \(pdfs.count) 份文献..."
+        uploadStatusMessage = "正在添加 \(pdfs.count) 份文献…"
 
         Task {
-            var successCount = 0
+            var failures: [String] = []
             for (idx, pdfURL) in pdfs.enumerated() {
-                uploadStatusMessage = "[\(idx + 1)/\(pdfs.count)] 正在投递 \(pdfURL.lastPathComponent)..."
-                let success = await uploadSinglePDF(url: pdfURL)
-                if success {
-                    successCount += 1
+                uploadStatusMessage = "正在添加 \(idx + 1)/\(pdfs.count)：\(pdfURL.lastPathComponent)"
+                if let reason = await uploadSinglePDF(url: pdfURL, pipeline: pipeline, service: service) {
+                    failures.append("\(pdfURL.lastPathComponent)：\(reason)")
                 }
             }
 
             self.isUploading = false
-            self.uploadStatusMessage = "已成功添加 \(successCount) 份文献至转换队列"
+            if !failures.isEmpty {
+                self.errorMessage = "已添加 \(pdfs.count - failures.count) 份，\(failures.count) 份未能添加：\n" + failures.joined(separator: "\n")
+            }
             self.refreshTasks()
         }
     }
@@ -236,7 +285,7 @@ public final class BackendManager: ObservableObject {
         return results
     }
 
-    private func uploadSinglePDF(url: URL) async -> Bool {
+    private func uploadSinglePDF(url: URL, pipeline: PipelineMode, service: TranslationService) async -> String? {
         let uploadURL = serverBaseURL.appendingPathComponent("api/upload")
         var request = URLRequest(url: uploadURL)
         request.httpMethod = "POST"
@@ -246,7 +295,7 @@ public final class BackendManager: ObservableObject {
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
 
         guard let fileData = try? Data(contentsOf: url) else {
-            return false
+            return "无法读取文件"
         }
 
         var body = Data()
@@ -254,12 +303,12 @@ public final class BackendManager: ObservableObject {
         // 1. pipelineMode
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"pipelineMode\"\r\n\r\n".data(using: .utf8)!)
-        body.append("\(selectedPipeline.rawValue)\r\n".data(using: .utf8)!)
+        body.append("\(pipeline.requestValue)\r\n".data(using: .utf8)!)
 
         // 2. service
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
         body.append("Content-Disposition: form-data; name=\"service\"\r\n\r\n".data(using: .utf8)!)
-        body.append("\(selectedService.rawValue)\r\n".data(using: .utf8)!)
+        body.append("\(service.rawValue)\r\n".data(using: .utf8)!)
 
         // 3. relativePath
         body.append("--\(boundary)\r\n".data(using: .utf8)!)
@@ -278,38 +327,34 @@ public final class BackendManager: ObservableObject {
 
         do {
             let (_, response) = try await URLSession.shared.upload(for: request, from: body)
-            if let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 {
-                return true
-            }
+            guard let httpResp = response as? HTTPURLResponse else { return "后台响应无效" }
+            guard httpResp.statusCode == 200 else { return "后台拒绝了文件（HTTP \(httpResp.statusCode)）" }
+            return nil
         } catch {
-            print("Upload failed: \(error.localizedDescription)")
+            return "无法连接后台：\(error.localizedDescription)"
         }
-        return false
     }
 
     // MARK: - Actions & Finder Integration
 
     public func revealOutbox() {
-        let endpoint = serverBaseURL.appendingPathComponent("api/reveal_outbox")
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        Task {
-            _ = try? await URLSession.shared.data(for: request)
-        }
-        // Also fallback to local Finder open
-        let outboxPath = (projectRootPath as NSString).appendingPathComponent("outbox")
-        NSWorkspace.shared.open(URL(fileURLWithPath: outboxPath))
+        revealDirectory(at: outputFolderPath)
     }
 
     public func revealInbox() {
-        let endpoint = serverBaseURL.appendingPathComponent("api/reveal_inbox")
-        var request = URLRequest(url: endpoint)
-        request.httpMethod = "POST"
-        Task {
-            _ = try? await URLSession.shared.data(for: request)
-        }
-        let inboxPath = (projectRootPath as NSString).appendingPathComponent("inbox")
-        NSWorkspace.shared.open(URL(fileURLWithPath: inboxPath))
+        revealDirectory(at: (projectRootPath as NSString).appendingPathComponent("inbox"))
+    }
+
+    /// Open a directory exactly once, and only after making sure it exists.
+    ///
+    /// Previously these methods posted to /api/reveal_* (which runs `open` on
+    /// the backend) *and* called NSWorkspace locally, so one click produced two
+    /// Finder windows.
+    private func revealDirectory(at path: String) {
+        let url = URL(fileURLWithPath: path)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        guard FileManager.default.fileExists(atPath: url.path) else { return }
+        NSWorkspace.shared.open(url)
     }
 
     public func openFile(path: String) {
@@ -328,6 +373,75 @@ public final class BackendManager: ObservableObject {
     }
 
     public func clearCompleted() {
+        dismissedCompletedIDs.formUnion(tasks.filter { $0.status == .completed }.map(\.id))
         tasks.removeAll(where: { $0.status == .completed })
+    }
+
+    // MARK: - Output Folder
+
+    /// 把 App 里保存的输出目录同步给后台。`force` 用于用户在设置里
+    /// 明确点选/恢复默认后立即生效；普通轮询会按路径去重。
+    public func syncOutputFolderIfNeeded(force: Bool = false) {
+        guard connectionStatus.isConnected else { return }
+
+        let target = outputFolderPath
+        guard force || lastSyncedOutputFolder != target else { return }
+        guard !isSyncingOutputFolder else { return }
+
+        isSyncingOutputFolder = true
+        outputFolderError = nil
+
+        var request = URLRequest(url: serverBaseURL.appendingPathComponent("api/settings"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 8.0
+
+        do {
+            request.httpBody = try JSONSerialization.data(
+                withJSONObject: ["outbox_dir": target],
+                options: []
+            )
+        } catch {
+            isSyncingOutputFolder = false
+            outputFolderError = "无法编码输出文件夹设置：\(error.localizedDescription)"
+            return
+        }
+
+        Task {
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 else {
+                    throw OutputFolderError.backendRejected
+                }
+                _ = try JSONDecoder().decode(BackendSettingsResponse.self, from: data)
+
+                self.lastSyncedOutputFolder = target
+                self.isSyncingOutputFolder = false
+                self.outputFolderError = nil
+
+                // 用户在请求飞行期间又换了目录：继续追平最新选择。
+                if self.outputFolderPath != target {
+                    self.syncOutputFolderIfNeeded(force: true)
+                }
+            } catch {
+                self.isSyncingOutputFolder = false
+                self.outputFolderError = "无法应用输出文件夹：\(error.localizedDescription)"
+            }
+        }
+    }
+
+    private struct BackendSettingsResponse: Decodable {
+        let outbox_dir: String
+    }
+
+    private enum OutputFolderError: LocalizedError {
+        case backendRejected
+
+        var errorDescription: String? {
+            switch self {
+            case .backendRejected:
+                return "后台拒绝了该文件夹（请确认目录存在且可写）"
+            }
+        }
     }
 }

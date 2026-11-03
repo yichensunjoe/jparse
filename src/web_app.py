@@ -12,13 +12,15 @@ import mimetypes
 import os
 from pathlib import Path
 import re
+import secrets
 import shutil
 import subprocess
 import sys
 import threading
 import time
 from typing import Any, Dict, List, Optional
-from urllib.parse import parse_qs, unquote, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
+from urllib.request import urlopen
 from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -45,17 +47,92 @@ class ConversionTaskManager:
     def __init__(self, project_root: Path, max_workers: int = 1):
         self.project_root = Path(project_root).resolve()
         self.inbox_dir = self.project_root / "inbox"
-        self.outbox_dir = self.project_root / "outbox"
+        self.default_outbox_dir = self.project_root / "outbox"
+        self.outbox_dir = self.default_outbox_dir
         self.processed_dir = self.project_root / "processed"
         self.failed_dir = self.project_root / "failed"
+        # 工作台自己认领文件：投递即移入 processing/，与后台 watcher 的 inbox 扫描
+        # 天然隔离，同一份 PDF 不会被两套管线同时处理。
+        self.processing_dir = self.project_root / "processing"
 
-        for d in [self.inbox_dir, self.outbox_dir, self.processed_dir, self.failed_dir]:
+        for d in [self.inbox_dir, self.outbox_dir, self.processed_dir, self.failed_dir, self.processing_dir]:
             d.mkdir(parents=True, exist_ok=True)
 
         self.tasks: List[Dict[str, Any]] = []
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="LiteParseWorker")
         self._subscribers: List[threading.Event] = []
+
+    def set_outbox_dir(self, raw_path: str) -> Path:
+        """Switch the output directory for future tasks.
+
+        The path comes from the desktop app's native folder picker, so it may
+        legitimately live outside the project. Validate it as a real, writable
+        directory before publishing the change to the task manager.
+        """
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            raise ValueError("输出文件夹不能为空")
+
+        try:
+            candidate = Path(raw_path).expanduser()
+            if not candidate.is_absolute():
+                candidate = self.project_root / candidate
+            candidate = candidate.resolve()
+        except (OSError, ValueError) as exc:
+            raise ValueError("输出文件夹路径无效：%s" % exc) from exc
+
+        if candidate.exists() and not candidate.is_dir():
+            raise ValueError("输出路径不是文件夹")
+
+        try:
+            candidate.mkdir(parents=True, exist_ok=True)
+            probe = candidate / (".liteparse-write-probe-%s-%s" % (os.getpid(), time.time_ns()))
+            probe.write_text("", encoding="utf-8")
+            probe.unlink()
+        except OSError as exc:
+            raise ValueError("输出文件夹不可写：%s" % exc) from exc
+
+        self.outbox_dir = candidate
+        return candidate
+
+    def _stem_free(self, stem: str) -> bool:
+        """True when no existing input or deliverable already uses this stem."""
+        occupied = [
+            self.processing_dir / (stem + ".pdf"),
+            self.processed_dir / (stem + ".pdf"),
+            self.failed_dir / (stem + ".pdf"),
+            self.outbox_dir / (stem + ".html"),
+            self.outbox_dir / (stem + ".md"),
+            self.outbox_dir / (stem + "-中文精译版.pdf"),
+            self.outbox_dir / (stem + "-双语对照版.pdf"),
+            self.outbox_dir / (stem + ".mono.pdf"),
+            self.outbox_dir / (stem + ".原位双层版.html"),
+        ]
+        return not any(path.exists() for path in occupied)
+
+    def reserve_stem(self, original_stem: str) -> str:
+        """Reserve a collision-free stem under processing/ so peers skip it too."""
+        with self._lock:
+            stem = original_stem or "document"
+            index = 2
+            while not self._stem_free(stem):
+                stem = "%s-%d" % (original_stem, index)
+                index += 1
+            (self.processing_dir / (stem + ".pdf")).touch(exist_ok=False)
+            return stem
+
+    @staticmethod
+    def _unique_path(directory: Path, filename: str) -> Path:
+        candidate = directory / filename
+        if not candidate.exists():
+            return candidate
+        source = Path(filename)
+        index = 2
+        while True:
+            candidate = directory / ("%s-%d%s" % (source.stem, index, source.suffix))
+            if not candidate.exists():
+                return candidate
+            index += 1
 
     def add_file(self, file_path: Path, relative_path: str, options: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         """Add a PDF file to the conversion task queue."""
@@ -78,6 +155,7 @@ class ConversionTaskManager:
         }
         with self._lock:
             self.tasks.insert(0, task)
+            del self.tasks[200:]
         self._notify_subscribers()
         self._executor.submit(self._run_task, task_id)
         return task
@@ -136,11 +214,9 @@ class ConversionTaskManager:
                 config=config,
             )
 
-            # 3. Archive original file into processed/
-            dest_processed = self.processed_dir / input_path.name
-            if input_path.exists() and input_path.parent == self.inbox_dir:
-                if dest_processed.exists():
-                    dest_processed.unlink()
+            # 3. Archive original file into processed/ (never overwrite an old one)
+            if input_path.exists() and input_path.parent in (self.inbox_dir, self.processing_dir):
+                dest_processed = self._unique_path(self.processed_dir, input_path.name)
                 shutil.move(str(input_path), str(dest_processed))
 
             duration = round(time.time() - start_time, 2)
@@ -166,12 +242,10 @@ class ConversionTaskManager:
         except Exception as e:
             logger.exception("任务 %s 转换失败: %s", task_id, e)
             duration = round(time.time() - start_time, 2)
-            # Move to failed/ if in inbox
-            if input_path.exists() and input_path.parent == self.inbox_dir:
+            # Move to failed/ (never overwrite an old one)
+            if input_path.exists() and input_path.parent in (self.inbox_dir, self.processing_dir):
                 try:
-                    dest_failed = self.failed_dir / input_path.name
-                    if dest_failed.exists():
-                        dest_failed.unlink()
+                    dest_failed = self._unique_path(self.failed_dir, input_path.name)
                     shutil.move(str(input_path), str(dest_failed))
                 except Exception:
                     pass
@@ -630,8 +704,8 @@ INDEX_HTML = """<!DOCTYPE html>
             </div>
         </div>
         <div class="header-actions">
-            <button class="btn" onclick="revealOutbox()">📂 打开产物目录 (outbox)</button>
-            <button class="btn" onclick="revealInbox()">📥 打开投递箱 (inbox)</button>
+            <button class="btn" id="btnRevealOutbox">📂 打开产物目录 (outbox)</button>
+            <button class="btn" id="btnRevealInbox">📥 打开投递箱 (inbox)</button>
         </div>
     </header>
 
@@ -643,35 +717,26 @@ INDEX_HTML = """<!DOCTYPE html>
                 <div class="drop-title">拖入单个 PDF，或拖入包含多个 PDF 的整套文件夹</div>
                 <div class="drop-hint">系统将递归解析所有 PDF，自动判别矢量学术论文与历史扫描件并启动最优管线</div>
                 <div class="drop-options">
-                    <button class="btn btn-primary" onclick="document.getElementById('fileInput').click()">
+                    <button class="btn btn-primary" id="btnPickFile">
                         📄 选择 PDF 文件
                     </button>
-                    <button class="btn" onclick="document.getElementById('folderInput').click()">
+                    <button class="btn" id="btnPickFolder">
                         📁 选择整个文件夹
                     </button>
-                    <input type="file" id="fileInput" multiple accept=".pdf" style="display: none;" onchange="handleFileInput(this.files)">
-                    <input type="file" id="folderInput" webkitdirectory directory multiple style="display: none;" onchange="handleFileInput(this.files)">
+                    <input type="file" id="fileInput" multiple accept=".pdf" style="display: none;">
+                    <input type="file" id="folderInput" webkitdirectory directory multiple style="display: none;">
                 </div>
             </div>
         </div>
 
         <!-- Strategy & Settings Toolbar -->
         <div class="toolbar-panel">
-            <div class="control-group">
-                <span>智能路由策略:</span>
-                <select id="pipelineMode" class="select-input">
-                    <option value="auto">🤖 智能自动判别 (Auto Dual-Track 推荐)</option>
-                    <option value="scanned">⚡️ 扫描件出版级高清重构 (HD PDF · 原图提取嵌入 · 双语对照)</option>
-                    <option value="vector">📘 现代矢量学术论文 (pdf2zh 矢量无损排版)</option>
-                    <option value="insitu_legacy">📜 历史原位双层对比画布 (仅生成 HTML)</option>
-                </select>
-            </div>
+            <input type="hidden" id="pipelineMode" value="auto">
             <div class="control-group">
                 <span>翻译引擎:</span>
                 <select id="serviceEngine" class="select-input">
                     <option value="bing">Bing 神经网络翻译 (免费高速 · 已应用分块防截断补丁)</option>
                     <option value="google">Google 翻译 (全球通道)</option>
-                    <option value="offline">离线 CTranslate2 INT8 模型 (100% 局域离线)</option>
                 </select>
             </div>
         </div>
@@ -683,7 +748,7 @@ INDEX_HTML = """<!DOCTYPE html>
                     <span>转换任务列表</span>
                     <span class="badge-count" id="taskCountBadge">0</span>
                 </div>
-                <button class="btn" style="font-size: 12px; padding: 4px 10px;" onclick="refreshTasks()">🔄 刷新状态</button>
+                <button class="btn" id="btnRefreshTasks" style="font-size: 12px; padding: 4px 10px;">🔄 刷新状态</button>
             </div>
 
             <div id="taskList" class="task-list">
@@ -696,9 +761,16 @@ INDEX_HTML = """<!DOCTYPE html>
         LiteParse 自动化文档识别与翻译工程 · 离线私有化部署 · 遵循确定性代码与原子落盘规范
     </footer>
 
-    <script>
+    <script nonce="__CSP_NONCE__">
         const dropzone = document.getElementById('dropzone');
         let isUploading = false;
+
+        function esc(value) {
+            return String(value === undefined || value === null ? '' : value)
+                .replace(/[&<>"']/g, (c) => ({
+                    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+                }[c]));
+        }
 
         // Drag & Drop Handlers
         dropzone.addEventListener('dragover', (e) => {
@@ -840,7 +912,7 @@ INDEX_HTML = """<!DOCTYPE html>
                 if (t.status === 'completed') {
                     statusBadge = '<span class="pill pill-completed">✓ 已完成</span>';
                 } else if (t.status === 'failed') {
-                    statusBadge = `<span class="pill pill-failed">✕ 失败: ${t.error || '未知错误'}</span>`;
+                    statusBadge = `<span class="pill pill-failed">✕ 失败: ${esc(t.error || '未知错误')}</span>`;
                 } else if (t.status === 'probing') {
                     statusBadge = '<span class="pill pill-vector anim-pulse">🔍 判别版面中...</span>';
                 } else if (t.status === 'processing') {
@@ -858,7 +930,7 @@ INDEX_HTML = """<!DOCTYPE html>
 
                 const outputsHtml = (t.output_files || []).map(out => {
                     const icon = out.is_pdf ? '📄' : (out.is_html ? '🌐' : '📝');
-                    return `<a href="/api/download?path=${encodeURIComponent(out.path)}" target="_blank" class="output-btn">${icon} ${out.name}</a>`;
+                    return `<a href="/api/download?path=${encodeURIComponent(out.path)}" target="_blank" class="output-btn">${icon} ${esc(out.name)}</a>`;
                 }).join('');
 
                 return `
@@ -866,11 +938,11 @@ INDEX_HTML = """<!DOCTYPE html>
                     <div class="task-main">
                         <div class="task-info">
                             <div class="task-name-row">
-                                <span class="task-name">${t.filename}</span>
+                                <span class="task-name">${esc(t.filename)}</span>
                                 ${docTypeBadge}
                                 ${statusBadge}
                             </div>
-                            <div class="task-path">${t.relative_path} · ${(t.file_size / 1024).toFixed(1)} KB ${t.duration ? `· 耗时 ${t.duration}s` : ''}</div>
+                            <div class="task-path">${esc(t.relative_path)} · ${(Number(t.file_size || 0) / 1024).toFixed(1)} KB ${t.duration ? `· 耗时 ${Number(t.duration)}s` : ''}</div>
                         </div>
                     </div>
                     <div class="task-progress-bar">
@@ -890,6 +962,20 @@ INDEX_HTML = """<!DOCTYPE html>
             await fetch('/api/reveal_inbox', { method: 'POST' });
         }
 
+        // Wire up controls here instead of inline onclick handlers, so the page
+        // can run under a nonce-based CSP that blocks inline script.
+        document.getElementById('btnRevealOutbox').addEventListener('click', revealOutbox);
+        document.getElementById('btnRevealInbox').addEventListener('click', revealInbox);
+        document.getElementById('btnPickFile').addEventListener('click', () => {
+            document.getElementById('fileInput').click();
+        });
+        document.getElementById('btnPickFolder').addEventListener('click', () => {
+            document.getElementById('folderInput').click();
+        });
+        document.getElementById('btnRefreshTasks').addEventListener('click', refreshTasks);
+        document.getElementById('fileInput').addEventListener('change', (e) => handleFileInput(e.target.files));
+        document.getElementById('folderInput').addEventListener('change', (e) => handleFileInput(e.target.files));
+
         // Auto polling every 2 seconds
         setInterval(refreshTasks, 2000);
         refreshTasks();
@@ -899,22 +985,85 @@ INDEX_HTML = """<!DOCTYPE html>
 """
 
 
+def reveal_in_finder(directory: Path) -> bool:
+    """Open a directory in Finder only when it really exists.
+
+    Module-level on purpose: tests patch this, because calling the real `open`
+    on a throw-away TemporaryDirectory pops Finder windows on every test run.
+    """
+    target = Path(directory)
+    if not target.is_dir():
+        return False
+    try:
+        subprocess.run(["open", str(target)], check=False)
+    except OSError:
+        return False
+    return True
+
+
 class LiteParseAppHandler(SimpleHTTPRequestHandler):
-    """HTTP Request Handler for LiteParse interactive application."""
+    """HTTP Request Handler for LiteParse interactive application.
+
+    Only 127.0.0.1 is bound, but that alone does not stop other web pages from
+    posting to this server (multipart POST needs no preflight) or a DNS-rebound
+    page from reading it. Every request is therefore checked against the
+    listener's own host, and every mutation additionally against Origin.
+    """
 
     task_manager: ConversionTaskManager = None
+    max_upload_bytes = 1024 * 1024 * 1024  # 1 GB
+
+    def _allowed_origins(self):
+        port = self.server.server_address[1]
+        return {
+            "http://127.0.0.1:%d" % port,
+            "http://localhost:%d" % port,
+            "http://[::1]:%d" % port,
+        }
+
+    def _host_allowed(self) -> bool:
+        host = (self.headers.get("Host") or "").strip().lower()
+        allowed = {origin.split("://", 1)[1] for origin in self._allowed_origins()}
+        return host in allowed
+
+    def _origin_allowed(self) -> bool:
+        origin = (self.headers.get("Origin") or "").strip().rstrip("/").lower()
+        if not origin:
+            return True  # 非浏览器客户端（curl / 桌面端）没有 Origin
+        return origin in self._allowed_origins()
 
     def do_GET(self):
+        if not self._host_allowed():
+            self.send_error(403, "Forbidden host")
+            return
         parsed = urlparse(self.path)
         path = parsed.path
 
         if path in ("/", "/index.html"):
+            nonce = secrets.token_urlsafe(16)
+            content = INDEX_HTML.replace("__CSP_NONCE__", nonce).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
-            content = INDEX_HTML.encode("utf-8")
             self.send_header("Content-Length", str(len(content)))
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header(
+                "Content-Security-Policy",
+                "default-src 'none'; script-src 'nonce-%s'; style-src 'unsafe-inline'; "
+                "img-src 'self' data:; connect-src 'self'; form-action 'self'; "
+                "base-uri 'none'; frame-ancestors 'none'" % nonce,
+            )
             self.end_headers()
             self.wfile.write(content)
+            return
+
+        if path == "/api/settings":
+            self._send_json(
+                {
+                    "outbox_dir": str(self.task_manager.outbox_dir),
+                    "default_outbox_dir": str(self.task_manager.default_outbox_dir),
+                }
+            )
             return
 
         if path == "/api/tasks":
@@ -923,6 +1072,8 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
             self.wfile.write(data)
             return
@@ -933,25 +1084,28 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
             if not file_path_str:
                 self.send_error(400, "Missing path parameter")
                 return
-            target_path = Path(file_path_str).resolve()
-            # Security sandbox check: must be in outbox or project root
-            if not str(target_path).startswith(str(self.task_manager.project_root)):
+            outbox_root = self.task_manager.outbox_dir.resolve()
+            try:
+                target_path = Path(file_path_str).resolve()
+                target_path.relative_to(outbox_root)
+            except (OSError, ValueError):
+                # 字符串前缀比较会放过 `outbox-backup/` 这类兄弟目录，必须用真实路径包含。
                 self.send_error(403, "Access denied")
                 return
-            if not target_path.exists() or not target_path.is_file():
+            if not target_path.is_file() or target_path.name.startswith("."):
                 self.send_error(404, "File not found")
                 return
 
             mime, _ = mimetypes.guess_type(str(target_path))
             mime = mime or "application/octet-stream"
             file_size = target_path.stat().st_size
+            quoted = quote(target_path.name, safe="")
+            disposition = "inline" if target_path.suffix.lower() == ".pdf" else "attachment"
             self.send_response(200)
             self.send_header("Content-Type", mime)
             self.send_header("Content-Length", str(file_size))
-            if target_path.suffix.lower() == ".pdf":
-                self.send_header("Content-Disposition", f'inline; filename="{target_path.name}"')
-            else:
-                self.send_header("Content-Disposition", f'attachment; filename="{target_path.name}"')
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Content-Disposition", "%s; filename*=UTF-8''%s" % (disposition, quoted))
             self.end_headers()
 
             with open(target_path, "rb") as f:
@@ -961,23 +1115,59 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
         self.send_error(404, "Not Found")
 
     def do_POST(self):
+        if not self._host_allowed():
+            self.send_error(403, "Forbidden host")
+            return
+        if not self._origin_allowed():
+            self.send_error(403, "Forbidden origin")
+            return
         parsed = urlparse(self.path)
         path = parsed.path
 
         if path == "/api/reveal_outbox":
-            try:
-                subprocess.run(["open", str(self.task_manager.outbox_dir)])
-            except Exception:
-                pass
-            self._send_json({"ok": True})
+            self._send_json({"ok": True, "revealed": reveal_in_finder(self.task_manager.outbox_dir)})
             return
 
         if path == "/api/reveal_inbox":
+            self._send_json({"ok": True, "revealed": reveal_in_finder(self.task_manager.inbox_dir)})
+            return
+
+        if path == "/api/settings":
             try:
-                subprocess.run(["open", str(self.task_manager.inbox_dir)])
-            except Exception:
-                pass
-            self._send_json({"ok": True})
+                content_length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                self.send_error(400, "Invalid Content-Length")
+                return
+            if content_length <= 0:
+                self.send_error(400, "Empty body")
+                return
+            if content_length > 64 * 1024:
+                self.send_error(413, "Settings payload too large")
+                return
+
+            try:
+                payload = json.loads(self.rfile.read(content_length).decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                self.send_error(400, "Expected a JSON object")
+                return
+
+            if not isinstance(payload, dict):
+                self.send_error(400, "Expected a JSON object")
+                return
+
+            try:
+                target = self.task_manager.set_outbox_dir(payload.get("outbox_dir"))
+            except ValueError as exc:
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+                return
+
+            self._send_json(
+                {
+                    "ok": True,
+                    "outbox_dir": str(target),
+                    "default_outbox_dir": str(self.task_manager.default_outbox_dir),
+                }
+            )
             return
 
         if path == "/api/upload":
@@ -992,7 +1182,17 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
                 self.send_error(400, "Missing boundary in multipart/form-data")
                 return
             boundary = b_match.group(1) or b_match.group(2)
-            content_length = int(self.headers.get("Content-Length", 0))
+            try:
+                content_length = int(self.headers.get("Content-Length", "0"))
+            except ValueError:
+                self.send_error(400, "Invalid Content-Length")
+                return
+            if content_length <= 0:
+                self.send_error(400, "Empty body")
+                return
+            if content_length > self.max_upload_bytes:
+                self.send_error(413, "Payload too large")
+                return
             raw_data = self.rfile.read(content_length)
 
             parts = raw_data.split(f"--{boundary}".encode())
@@ -1036,26 +1236,26 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
                 self.send_error(400, "Only PDF files supported")
                 return
 
-            # Save uploaded file to inbox/, disambiguating duplicate names from folder drops
+            # 投递即认领：直接落入 processing/，避开 watcher 的 inbox 扫描，
+            # 同一份 PDF 不会被两套管线同时处理；重名由 reserve_stem 发号。
             safe_name = Path(filename).name
-            existing_names = {Path(t["input_path"]).name for t in self.task_manager.get_tasks()}
-            save_path = self.task_manager.inbox_dir / safe_name
-            if save_path.exists() or safe_name in existing_names:
-                stem = Path(filename).stem
-                suffix = Path(filename).suffix
-                counter = 1
-                while save_path.exists() or safe_name in existing_names:
-                    safe_name = f"{stem}_{counter}{suffix}"
-                    save_path = self.task_manager.inbox_dir / safe_name
-                    counter += 1
-
-            # Atomic save
-            tmp_save = self.task_manager.inbox_dir / f".{safe_name}.tmp"
-            tmp_save.write_bytes(file_bytes)
-            tmp_save.replace(save_path)
+            if not safe_name or safe_name in {".", ".."}:
+                self.send_error(400, "Invalid filename")
+                return
+            stem = self.task_manager.reserve_stem(Path(safe_name).stem)
+            claimed = self.task_manager.processing_dir / (stem + ".pdf")
+            tmp_save = self.task_manager.processing_dir / (".%s.pdf.tmp" % stem)
+            try:
+                tmp_save.write_bytes(file_bytes)
+                tmp_save.replace(claimed)
+            except OSError:
+                tmp_save.unlink(missing_ok=True)
+                claimed.unlink(missing_ok=True)
+                self.send_error(500, "Failed to store upload")
+                return
 
             task = self.task_manager.add_file(
-                file_path=save_path,
+                file_path=claimed,
                 relative_path=relative_path or safe_name,
                 options={
                     "pipeline_mode": pipeline_mode,
@@ -1073,8 +1273,19 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.end_headers()
         self.wfile.write(body)
+
+
+def _instance_serving(port: int) -> bool:
+    """True when a LiteParse workbench already answers on this loopback port."""
+    try:
+        with urlopen("http://127.0.0.1:%d/api/tasks" % port, timeout=1.5) as response:
+            return response.status == 200
+    except Exception:
+        return False
 
 
 def run_server(port: int = 8765, open_browser: bool = True):
@@ -1083,14 +1294,16 @@ def run_server(port: int = 8765, open_browser: bool = True):
     task_mgr = ConversionTaskManager(project_root=project_root)
     LiteParseAppHandler.task_manager = task_mgr
 
-    server_address = ("127.0.0.1", port)
     try:
-        httpd = ThreadingHTTPServer(server_address, LiteParseAppHandler)
-    except OSError:
-        # Fallback to alternate port
-        port = port + 1
-        server_address = ("127.0.0.1", port)
-        httpd = ThreadingHTTPServer(server_address, LiteParseAppHandler)
+        httpd = ThreadingHTTPServer(("127.0.0.1", port), LiteParseAppHandler)
+    except OSError as exc:
+        # 不再静默换端口：桌面端写死 8765，换了端口它只会永远“连接失败”。
+        # 端口已被占用且确实是本应用，就直接复用那个实例。
+        if _instance_serving(port):
+            print("端口 %d 上已有 LiteParse 工作台实例在运行，直接复用。" % port)
+            return
+        print("无法监听 127.0.0.1:%d：%s" % (port, exc), file=sys.stderr)
+        raise SystemExit(1)
 
     url = f"http://127.0.0.1:{port}"
     print(f"🚀 LiteParse 交互式工作台已启动: {url}")

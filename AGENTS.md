@@ -1,7 +1,7 @@
 # 项目执行规则 — P052-LiteParse-PDF自动识别
 
 - 本项目仅处理投递到 `inbox/` 的 PDF。
-- 保持本地离线处理，不上传 PDF 内容。
+- 识别、抽取与排版必须在本机完成，原始 PDF 永不上传；翻译阶段默认调用 `config.json` 中 `pdf2zh_service` 指定的在线服务（2026-10-30 用户确认接受），切换服务必须显式改配置，不得静默更换。
 - 生成中文件先写入临时文件，成功后再原子替换到 `outbox/`。
 - 默认 HTML 必须由确定性本地代码生成，不调用 LLM；PDF 内嵌图片使用 data URI 放入单文件 HTML。
 - 来自 PDF 的 Markdown/HTML/链接均视为不可信输入，渲染时必须转义原始 HTML 并拒绝危险 URL scheme。

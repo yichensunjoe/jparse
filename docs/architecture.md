@@ -24,6 +24,10 @@ processing/临时工作区
 - `src/scan_html_renderer.py`：扫描书逐页保真 HTML。
 - `src/markdown_reflow.py`：确定性软换行修复。
 - `src/table_repair.py`：强异常信号触发的坐标表格修复。
+- `src/table_overlay.py`：矢量 PDF 表格单元格按 OpenDataLoader bbox 原位回贴中文，保留网格与底纹。
+- `src/figure_overlay.py`：矢量图内标签按色块/单元格聚合翻译，只擦文字、保留图形与配色。
+- `src/pdf_cleanup.py`：清理 pdf2zh 重排后遗留的孤立标题/内联下划线，保护表格、脚注与彩色链接线。
+- `src/text_layout_repair.py`：识别 pdf2zh 把多个列表项合并成一段的页面，按源 PDF 的基线、悬挂缩进和列表标记重排；只改译文页，并将原内联下划线贴回对应中文术语。
 - `config.json`：路径、超时、页数、OCR 与日志限制。
 
 ## 关键不变量

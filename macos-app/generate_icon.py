@@ -1,145 +1,245 @@
 #!/usr/bin/env python3
-"""Generate a high-resolution native macOS AppIcon.icns for LiteParse Studio."""
+"""Generate a high-resolution native macOS AppIcon.icns for LiteParse Studio.
 
-import os
+设计：深墨蓝圆角底 + 轻斜的暖白纸页，右上角折起露出青色纸背，
+页尾用一个青色光标收束文本，折角旁一颗小火花。目标是比“居中厚文档”
+更轻、更像正在被解析的纸页，同时在 16px 下仍保留清楚的斜向轮廓。
+"""
+
+import math
 import subprocess
 from pathlib import Path
+
 from PIL import Image, ImageDraw, ImageFilter
 
 
-def create_icon_image(size: int = 1024) -> Image.Image:
-    # 1024x1024 base canvas with transparency
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
+# 以 2048 绘制后下采样，保证 Retina / 小尺寸边缘干净。
+_SUPERSAMPLE = 2048
 
-    scale = size / 1024.0
 
-    # Apple squircle bounds: 824x824 centered inside 1024x1024
-    pad = int(100 * scale)
-    card_w = size - 2 * pad
-    radius = int(185 * scale)
+def _sc(value: float, size: int = _SUPERSAMPLE) -> int:
+    return int(round(value * size / 1024.0))
 
-    # 1. Outer ambient shadow
-    shadow = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    s_draw = ImageDraw.Draw(shadow)
-    s_draw.rounded_rectangle(
-        [pad + int(8 * scale), pad + int(16 * scale), pad + card_w - int(8 * scale), pad + card_w + int(24 * scale)],
-        radius=radius,
-        fill=(0, 0, 0, 110)
+
+def _rounded_mask(size: int, radius: int) -> Image.Image:
+    mask = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(mask).rounded_rectangle(
+        [0, 0, size - 1, size - 1], radius=radius, fill=255
     )
-    shadow = shadow.filter(ImageFilter.GaussianBlur(int(28 * scale)))
-    img = Image.alpha_composite(shadow, img)
+    return mask
 
-    # 2. Main Squircle Card Background (Liquid Deep Navy/Cobalt Gradient)
-    card = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    c_draw = ImageDraw.Draw(card)
 
-    for y in range(card_w):
-        ratio = y / card_w
-        r = int(10 + ratio * 12)
-        g = int(22 + ratio * 32)
-        b = int(45 + ratio * 85)
-        color = (r, g, b, 255)
-        c_draw.line(
-            [(pad, pad + y), (pad + card_w, pad + y)],
-            fill=color,
-            width=1
+def _vertical_gradient(size: int, top: tuple, bottom: tuple) -> Image.Image:
+    gradient = Image.new("RGB", (1, size))
+    draw = ImageDraw.Draw(gradient)
+    for y in range(size):
+        t = y / max(1, size - 1)
+        draw.point(
+            (0, y),
+            fill=tuple(
+                int(top[channel] + (bottom[channel] - top[channel]) * t)
+                for channel in range(3)
+            ),
+        )
+    return gradient.resize((size, size), Image.Resampling.BICUBIC)
+
+
+def _background() -> Image.Image:
+    pad = _sc(98)
+    card = _SUPERSAMPLE - pad * 2
+    radius = _sc(188)
+
+    bg = _vertical_gradient(card, (39, 100, 131), (12, 42, 62)).convert("RGBA")
+
+    # 左上冷光 + 右下青色回光，制造纸页被托起的空气感。
+    top_glow = Image.new("RGBA", (card, card), (0, 0, 0, 0))
+    ImageDraw.Draw(top_glow).ellipse(
+        [-card * 0.35, -card * 0.45, card * 0.75, card * 0.55],
+        fill=(134, 210, 220, 58),
+    )
+    bg = Image.alpha_composite(
+        bg, top_glow.filter(ImageFilter.GaussianBlur(card * 0.18))
+    )
+
+    bottom_glow = Image.new("RGBA", (card, card), (0, 0, 0, 0))
+    ImageDraw.Draw(bottom_glow).ellipse(
+        [card * 0.35, card * 0.55, card * 1.25, card * 1.25],
+        fill=(27, 132, 137, 55),
+    )
+    bg = Image.alpha_composite(
+        bg, bottom_glow.filter(ImageFilter.GaussianBlur(card * 0.18))
+    )
+
+    bg.putalpha(_rounded_mask(card, radius))
+    canvas = Image.new("RGBA", (_SUPERSAMPLE, _SUPERSAMPLE), (0, 0, 0, 0))
+    canvas.alpha_composite(bg, (pad, pad))
+
+    # 极细内缘高光，让图标在浅色 Dock 上仍有边界。
+    rim = Image.new("RGBA", (_SUPERSAMPLE, _SUPERSAMPLE), (0, 0, 0, 0))
+    ImageDraw.Draw(rim).rounded_rectangle(
+        [pad, pad, pad + card - 1, pad + card - 1],
+        radius=radius,
+        outline=(255, 255, 255, 40),
+        width=_sc(2),
+    )
+    return Image.alpha_composite(canvas, rim)
+
+
+def _draw_star(
+    draw: ImageDraw.ImageDraw,
+    cx: float,
+    cy: float,
+    radius: float,
+    fill: tuple,
+    inner: float = 0.24,
+) -> None:
+    points = []
+    for index in range(8):
+        angle = -math.pi / 2 + index * math.pi / 4
+        point_radius = radius if index % 2 == 0 else radius * inner
+        points.append(
+            (cx + math.cos(angle) * point_radius, cy + math.sin(angle) * point_radius)
+        )
+    draw.polygon(points, fill=fill)
+
+
+def _page_layer() -> Image.Image:
+    page_w, page_h = _sc(322), _sc(428)
+    radius = _sc(26)
+    fold = _sc(82)
+    margin = _sc(40)
+    page = Image.new(
+        "RGBA", (page_w + margin * 2, page_h + margin * 2), (0, 0, 0, 0)
+    )
+    origin_x, origin_y = margin, margin
+
+    # 1. 纸页主体：暖白，不做过厚的卡片圆角。
+    body = Image.new("RGBA", (page_w, page_h), (0, 0, 0, 0))
+    ImageDraw.Draw(body).rounded_rectangle(
+        [0, 0, page_w - 1, page_h - 1], radius=radius, fill=(252, 250, 243, 255)
+    )
+
+    # 2. 切掉右上角，给折页留出真实的缺口。
+    cut_mask = Image.new("L", (page_w, page_h), 255)
+    ImageDraw.Draw(cut_mask).polygon(
+        [(page_w - fold, 0), (page_w, 0), (page_w, fold)], fill=0
+    )
+    body.putalpha(
+        Image.composite(
+            body.getchannel("A"), Image.new("L", (page_w, page_h), 0), cut_mask
+        )
+    )
+
+    # 3. 纸页底部极轻的暖灰阴影，避免整张纸发平。
+    shade = Image.new("RGBA", (page_w, page_h), (0, 0, 0, 0))
+    ImageDraw.Draw(shade).rectangle(
+        [0, page_h * 0.72, page_w, page_h], fill=(214, 204, 183, 22)
+    )
+    shade = shade.filter(ImageFilter.GaussianBlur(_sc(30)))
+    shade.putalpha(
+        Image.composite(
+            shade.getchannel("A"),
+            Image.new("L", (page_w, page_h), 0),
+            body.getchannel("A"),
+        )
+    )
+    body = Image.alpha_composite(body, shade)
+
+    # 4. 折角露出青色纸背：一个向内折的三角形，沿切口加亮边与投影。
+    flap = Image.new("RGBA", (page_w, page_h), (0, 0, 0, 0))
+    flap_draw = ImageDraw.Draw(flap)
+    flap_draw.polygon(
+        [(page_w - fold, 0), (page_w, fold), (page_w - fold, fold)],
+        fill=(34, 112, 121, 255),
+    )
+    flap_draw.line(
+        [(page_w - fold, 0), (page_w, fold)],
+        fill=(116, 214, 210, 180),
+        width=_sc(4),
+    )
+    flap_draw.line(
+        [(page_w - fold, fold), (page_w, fold)],
+        fill=(10, 35, 43, 90),
+        width=_sc(7),
+    )
+    body = Image.alpha_composite(body, flap)
+
+    page.alpha_composite(body, (origin_x, origin_y))
+
+    # 5. 三条细墨线 + 页尾青色光标；线比旧版更细，留白更多。
+    text_x = origin_x + int(page_w * 0.17)
+    text_y = origin_y + int(page_h * 0.35)
+    widths = (0.60, 0.46, 0.27)
+    line_height = _sc(9)
+    line_gap = _sc(37)
+    page_draw = ImageDraw.Draw(page)
+    for index, width in enumerate(widths):
+        y = text_y + index * line_gap
+        page_draw.rounded_rectangle(
+            [text_x, y, text_x + int(page_w * width), y + line_height],
+            radius=line_height // 2,
+            fill=(31, 95, 138, 245) if index < 2 else (88, 145, 162, 235),
         )
 
-    # Squircle mask
-    mask = Image.new("L", (size, size), 0)
-    m_draw = ImageDraw.Draw(mask)
-    m_draw.rounded_rectangle([pad, pad, pad + card_w, pad + card_w], radius=radius, fill=255)
-
-    card.putalpha(mask)
-    img = Image.alpha_composite(img, card)
-
-    # 3. Inner Glass Refraction & Rim Light
-    rim = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    r_draw = ImageDraw.Draw(rim)
-    # Bright top-left rim highlight
-    r_draw.rounded_rectangle(
-        [pad + 1, pad + 1, pad + card_w - 1, pad + card_w - 1],
-        radius=radius,
-        outline=(255, 255, 255, 60),
-        width=int(3 * scale)
-    )
-    # Top highlight curve
-    r_draw.arc(
-        [pad + int(20 * scale), pad + int(15 * scale), pad + card_w - int(20 * scale), pad + int(180 * scale)],
-        start=190,
-        end=350,
-        fill=(255, 255, 255, 35),
-        width=int(2 * scale)
-    )
-    img = Image.alpha_composite(img, rim)
-
-    # 4. Central Motif: Floating Translucent Liquid Glass Document with Dual Prismatic Beams
-    fg = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    f_draw = ImageDraw.Draw(fg)
-
-    # Floating Document Plate
-    doc_w = int(420 * scale)
-    doc_h = int(520 * scale)
-    doc_x = (size - doc_w) // 2
-    doc_y = (size - doc_h) // 2 - int(10 * scale)
-    doc_radius = int(36 * scale)
-
-    # Document Glass Fill
-    f_draw.rounded_rectangle(
-        [doc_x, doc_y, doc_x + doc_w, doc_y + doc_h],
-        radius=doc_radius,
-        fill=(255, 255, 255, 22),
-        outline=(140, 210, 255, 120),
-        width=int(3 * scale)
+    cursor_y = text_y + 2 * line_gap + line_height // 2
+    cursor_x = text_x + int(page_w * widths[-1]) + _sc(18)
+    page_draw.rounded_rectangle(
+        [cursor_x, cursor_y - _sc(8), cursor_x + _sc(16), cursor_y + _sc(8)],
+        radius=_sc(3),
+        fill=(42, 150, 151, 255),
     )
 
-    # Folded corner in top-right of document
-    fold_size = int(80 * scale)
-    f_draw.polygon(
-        [
-            (doc_x + doc_w - fold_size, doc_y),
-            (doc_x + doc_w, doc_y + fold_size),
-            (doc_x + doc_w - fold_size, doc_y + fold_size)
-        ],
-        fill=(80, 160, 255, 140)
+    # 6. 折角旁的小火花：外圈先做柔光，再叠四角星，避免像一颗硬点。
+    star_x = origin_x + page_w - _sc(6)
+    star_y = origin_y + _sc(18)
+    star_glow = Image.new("RGBA", page.size, (0, 0, 0, 0))
+    _draw_star(
+        ImageDraw.Draw(star_glow),
+        star_x,
+        star_y,
+        _sc(54),
+        fill=(67, 190, 184, 80),
+    )
+    page = Image.alpha_composite(
+        page, star_glow.filter(ImageFilter.GaussianBlur(_sc(16)))
+    )
+    _draw_star(
+        ImageDraw.Draw(page), star_x, star_y, _sc(28), fill=(155, 240, 231, 255)
     )
 
-    # Prismatic Dual-Track Beams (Laser Cyan & Emerald)
-    # Track 1: Cyan Vector Beam
-    cx, cy = size // 2, size // 2
-    f_draw.line(
-        [(doc_x + int(60 * scale), cy - int(60 * scale)), (doc_x + doc_w - int(60 * scale), cy - int(60 * scale))],
-        fill=(56, 189, 248, 220),
-        width=int(12 * scale)
-    )
-    # Track 2: Emerald Scan Beam
-    f_draw.line(
-        [(doc_x + int(60 * scale), cy + int(10 * scale)), (doc_x + doc_w - int(120 * scale), cy + int(10 * scale))],
-        fill=(52, 211, 153, 220),
-        width=int(12 * scale)
-    )
-    # Track 3: Indigo Publication Beam
-    f_draw.line(
-        [(doc_x + int(60 * scale), cy + int(80 * scale)), (doc_x + doc_w - int(80 * scale), cy + int(80 * scale))],
-        fill=(168, 85, 247, 220),
-        width=int(12 * scale)
-    )
-
-    # Sparkle Accent (Center-right)
-    sparkle_x = doc_x + doc_w - int(55 * scale)
-    sparkle_y = cy - int(60 * scale)
-    sp_r = int(18 * scale)
-    f_draw.ellipse(
-        [sparkle_x - sp_r, sparkle_y - sp_r, sparkle_x + sp_r, sparkle_y + sp_r],
-        fill=(255, 255, 255, 240)
-    )
-
-    img = Image.alpha_composite(img, fg)
-    return img
+    return page
 
 
-def build_icns(output_icns_path: Path):
+def _compose_icon() -> Image.Image:
+    canvas = _background()
+    page = _page_layer()
+
+    # 纸页投影跟着纸页一起旋转，避免出现“纸在飘、影子没动”的穿帮。
+    alpha = page.getchannel("A").point(lambda value: int(value * 0.38))
+    shadow_solid = Image.new("RGBA", page.size, (8, 24, 32, 255))
+    shadow_solid.putalpha(alpha)
+    shadow = shadow_solid.filter(ImageFilter.GaussianBlur(_sc(28)))
+
+    pivot = (page.width // 2, page.height // 2)
+    tilt = -8
+    shadow = shadow.rotate(tilt, resample=Image.Resampling.BICUBIC, center=pivot)
+    page = page.rotate(tilt, resample=Image.Resampling.BICUBIC, center=pivot)
+
+    # 纸页中心略向左上偏，让右上折角和火花有呼吸空间。
+    x = int(_SUPERSAMPLE / 2 - page.width / 2 - _sc(8))
+    y = int(_SUPERSAMPLE / 2 - page.height / 2 - _sc(14))
+    canvas.alpha_composite(shadow, (x + _sc(2), y + _sc(26)))
+    canvas.alpha_composite(page, (x, y))
+    return canvas
+
+
+def create_icon_image(size: int = 1024) -> Image.Image:
+    """Return the icon at the requested square size, with transparent corners."""
+    icon = _compose_icon()
+    return icon.resize((size, size), Image.Resampling.LANCZOS)
+
+
+def build_icns(output_icns_path: Path) -> None:
     iconset_dir = output_icns_path.parent / "AppIcon.iconset"
     iconset_dir.mkdir(parents=True, exist_ok=True)
 
@@ -158,17 +258,17 @@ def build_icns(output_icns_path: Path):
         ("icon_512x512@2x.png", 1024),
     ]
 
-    for filename, s in sizes:
-        resized = base_img.resize((s, s), Image.Resampling.LANCZOS)
-        resized.save(iconset_dir / filename, "PNG")
+    for filename, size in sizes:
+        base_img.resize((size, size), Image.Resampling.LANCZOS).save(
+            iconset_dir / filename, "PNG"
+        )
 
     subprocess.run(
         ["iconutil", "-c", "icns", str(iconset_dir), "-o", str(output_icns_path)],
-        check=True
+        check=True,
     )
-    # Clean up iconset folder
-    for f in iconset_dir.iterdir():
-        f.unlink()
+    for file in iconset_dir.iterdir():
+        file.unlink()
     iconset_dir.rmdir()
     print(f"✅ 生成高分辨率 macOS 图标成功: {output_icns_path}")
 

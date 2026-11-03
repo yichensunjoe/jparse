@@ -22,6 +22,10 @@ except ImportError:
 logger = logging.getLogger("smart_router")
 
 
+class PDFProbeError(RuntimeError):
+    """Raised when a PDF cannot be probed for a reason the user can act on."""
+
+
 def probe_pdf_document_type(pdf_path: Path, max_check_pages: int = 3) -> str:
     """Probe PDF structure to distinguish modern vector academic PDFs from historical scans.
 
@@ -30,52 +34,61 @@ def probe_pdf_document_type(pdf_path: Path, max_check_pages: int = 3) -> str:
         'scanned': Raster scanned image document, microfiche, or typewriter copy.
     """
     pdf_path = Path(pdf_path).resolve()
-    doc = fitz.open(pdf_path)
-    total_pages = min(max_check_pages, len(doc))
-    if total_pages == 0:
-        doc.close()
-        return "scanned"
+    try:
+        doc = fitz.open(pdf_path)
+    except Exception as exc:
+        raise PDFProbeError(
+            "无法打开 PDF（文件可能已损坏、被加密或并非 PDF）：%s" % exc
+        ) from exc
 
-    is_scan_scores = []
+    # fitz 句柄必须无条件关闭：长驻 watcher 里泄漏会逐个累积文件描述符。
+    with doc:
+        if doc.needs_pass:
+            raise PDFProbeError("PDF 已加密，需要密码才能解析（当前不支持密码 PDF）")
+        total_pages = min(max_check_pages, len(doc))
+        if total_pages == 0:
+            return "scanned"
 
-    for i in range(total_pages):
-        page = doc[i]
-        p_area = max(1.0, page.rect.width * page.rect.height)
-        imgs = page.get_images()
-        fonts = page.get_fonts()
+        is_scan_scores = []
 
-        # 1. Full-page raster image check (typical in scanned books and microfiche)
-        has_full_page_img = False
-        for img in imgs:
-            xref = img[0]
-            try:
-                for r in page.get_image_rects(xref):
-                    if (r.width * r.height) / p_area > 0.75:
-                        has_full_page_img = True
-                        break
-            except Exception:
-                pass
+        for i in range(total_pages):
+            is_scan_scores.append(_page_looks_scanned(doc[i]))
 
-        # 2. Font inspection: OCR layers typically use GlyphLessFont, Type3, or single generic font
-        is_ocr_font = any(
-            any(k in str(f).lower() for k in ("glyphless", "type3", "tesseract", "abbyy", "unknown"))
-            for f in fonts
-        )
-
-        # 3. Text length: purely scanned PDFs with no OCR have 0 text
-        raw_text = page.get_text("text").strip()
-        has_dense_native_text = len(raw_text) > 250 and len(fonts) >= 3 and not is_ocr_font
-
-        if has_full_page_img and not has_dense_native_text:
-            is_scan_scores.append(True)
-        elif len(raw_text) < 50 and not has_dense_native_text:
-            is_scan_scores.append(True)
-        else:
-            is_scan_scores.append(False)
-
-    doc.close()
     scanned_count = sum(is_scan_scores)
     return "scanned" if scanned_count >= (total_pages / 2.0) else "vector"
+
+
+def _page_looks_scanned(page) -> bool:
+    """Heuristics: full-page raster, OCR font layers, or almost no text."""
+    p_area = max(1.0, page.rect.width * page.rect.height)
+    imgs = page.get_images()
+    fonts = page.get_fonts()
+
+    # 1. Full-page raster image check (typical in scanned books and microfiche)
+    has_full_page_img = False
+    for img in imgs:
+        xref = img[0]
+        try:
+            for rect in page.get_image_rects(xref):
+                if (rect.width * rect.height) / p_area > 0.75:
+                    has_full_page_img = True
+                    break
+        except Exception:
+            pass
+
+    # 2. Font inspection: OCR layers typically use GlyphLessFont, Type3, or a generic font
+    is_ocr_font = any(
+        any(k in str(f).lower() for k in ("glyphless", "type3", "tesseract", "abbyy", "unknown"))
+        for f in fonts
+    )
+
+    # 3. Text length: purely scanned PDFs with no OCR have 0 text
+    raw_text = page.get_text("text").strip()
+    has_dense_native_text = len(raw_text) > 250 and len(fonts) >= 3 and not is_ocr_font
+
+    if has_full_page_img and not has_dense_native_text:
+        return True
+    return len(raw_text) < 50 and not has_dense_native_text
 
 
 def route_and_process_pdf(

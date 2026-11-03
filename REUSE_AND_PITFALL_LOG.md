@@ -4,6 +4,213 @@
 
 规则：执行任务前先读本文件；任务完成后**双写**——先追加本文件，再同步追加总库（见 AGENTS.md）。
 
+## 2026-11-02 · 矢量论文内嵌位图图例的原位翻译与重绘（P052-LiteParse-PDF自动识别）
+
+- 场景：用户反馈在处理学术论文（如 MDPI、Springer、IEEE）时，正文虽是矢量文字并已被翻译，但论文内的流程图、网络结构图（如 Figure 1 代理模型流程、Figure 2 神经网络结构）中的英文文字依然未翻译。
+- 根因：这些图由作者在外部绘图工具制成后以位图（PNG/Image XObject 带 SMask 透明通道）形式贴入论文中，PDF 文字流中文字对象为 0。此前的 `figure_overlay` 属于矢量图层引擎（只处理矢量路径与文字），为保护位图画质跳过了纯位图。
+- 做法：新增 `src/bitmap_figure_translator.py`，构建位图图例原位翻译管道：
+  ① 提取带 SMask 透明通道的高清位图并于白底合成；
+  ② 本地 PaddleOCR 1:1 像素空间精确检测（禁用 UVDoc/orientation 避免坐标扭曲，置信度达 0.98~1.00）；
+  ③ 门禁机制：自动跳过数学公式与变量（$x_1, x_2, y_1$, formulas），跳过无文字纯照片与散点图；
+  ④ 智能多行聚合与核能领域词典适配（如 `core input parameters` -> `堆芯输入参数`，`NN model` -> `NN 模型`）；
+  ⑤ 容器边界底色采样与原位平滑擦除；
+  ⑥ 思源黑体抗锯齿重绘，自动提取并匹配原图字体颜色（输入层橙色、隐藏层蓝色、输出层绿色）；
+  ⑦ PyMuPDF `replace_image(xref)` 直接在 PDF 内原位无缝替换图片对象，外部排版与图题完全不变。
+- 验证：Figure 1、Figure 2 全部精准翻译重绘，全量 293/293 单测全绿，端到端替换生成 PDF 并实机比对验证。
+- 适用：学术论文与技术白皮书中以栅格位图（PNG/JPEG）形式内嵌的流程图、框图、架构图原位翻译与本土化重绘。
+
+
+## 2026-11-02 · 模式收口与极简降噪：隐藏模式选择与投递区翻译选项（P052-LiteParse-PDF自动识别）
+
+- 场景：用户反馈顶栏/设置中的模式切换（智能双轨/高清扫描/现代矢量/原位双层）及投递卡片上的翻译引擎选择/隐私说明造成过多视觉干扰与解释成本，要求彻底隐藏模式选择并让投递面板回归原始极简状态。
+- 做法：① 移除 `LightHeaderView` 顶栏的 `pipelineSwitcher` 与更多模式菜单，顶栏仅保留品牌与状态操作；② 移除 `LightDropZoneView` 空态 Hero 与紧凑条上的 `TranslationServicePicker` 与 `TranslationServiceNotice`，主卡片仅保留核心 CTA（选取文献 / 导入目录 / 拖拽提示）；③ 移除 `SettingsView` 中的“识别模式”Picker，翻译引擎统一收进偏好设置（⌘,）按需配置，代码中将默认路由锁死为 `.auto`；④ Web UI（`src/web_app.py`）将“智能路由策略”下拉框替换为隐藏域 `<input type="hidden" id="pipelineMode" value="auto">`，保持 `/api/upload` 协议兼容。
+- 踩坑：投递面板移除选择器后，紧凑条恢复为单行 `HStack` 布局，高度更紧凑；隐藏模式与翻译选择不影响后台默认能力，默认依旧走智能双轨与 Bing 神经翻译。
+- 验证：Swift 重新编译零警告（2.4M），真机截图确认 Hero 与顶栏恢复纯白极简；`tests/test_macos_ui.py`、Tier3/Tier4、287/287 单元测试全绿。
+- 适用：专业工具大众化收口时，将底层技术分支（如多种排版/抽取策略）与高阶配置（翻译服务）下沉到偏好设置，主视窗只保留极简投递动作。
+
+## 2026-11-02 · 原生设置窗口：输出目录、主题令牌与后端重放（P052-LiteParse-PDF自动识别）
+
+- 场景：桌面端需要把“基本设置”收进原生设置窗口，其中最关键的输出文件夹必须真正影响后续任务，而不能只改 UI 文案。
+- 做法：新增 `AppSettings`（UserDefaults）与 `Settings` scene；用 `NSOpenPanel` 选目录，`BackendManager` 通过 `POST /api/settings` 同步到 `ConversionTaskManager.outbox_dir`，后端先创建目录并写探针再发布；主题改为 4 个强调色 × 3 个画布底色，`LightTheme` 从 `static let` 改为计算属性，并用 `themeRevision` + `.id()` 强制主视图重新取值。
+- 踩坑：① `LightTheme` 的静态 `let` 会在启动时冻结颜色，设置改变后只有设置窗口变色；必须改成读取 `AppSettings` 的计算属性，并在根视图用 revision 重建。② `Settings` scene 必须是顶层 scene，`.commands` 要挂在 `WindowGroup` 上；误把 `.commands` 接在 `Settings` 后面虽然能编译，但工作台菜单的归属会漂移。③ 输出目录只存 App 端不够：后端重启会回到默认 `outbox`，所以每次连上/重连都要按当前 UserDefaults 重放；后端还需做真实写入探测，避免接受只读目录。④ 这是 Studio 任务级设置，后台 watcher 仍读 `config.json`，文档必须写明。
+- 验证：Swift 零警告 2.7M；`286/286` 单测（22.94s）；Tier4 8/8；真实原位 HTML 解析 149K；8765 设置 API 200、自定义目录下载 200、文件路径 400、恢复默认 200；设置窗口从菜单打开后窗口列表出现「通用」。
+- 适用：桌面 App 的“偏好设置”必须同时做本地持久化、后端重放和真实能力校验；主题切换要把设计令牌改成可观察状态，而不是只换一个局部颜色。
+
+## 2026-10-30 · 工程减负：先引用核查，再删缓存/生成物/重复归档（P052-LiteParse-PDF自动识别）
+
+- 场景：1.26G 中大部分是用户原件和交付物，不能按目录名直接清；需要证明删除项不被运行时/测试引用。
+- 做法：`rg` 搜索 `src`/`tests`/Swift/文档引用；只删 `.pytest_cache`、`.ruff_cache`、`__pycache__`、`.DS_Store`、旧 `audit_screenshots/`、4 个未跟踪测试输出、`work/acceptance_preview`；对 `processed`/`outbox` 的 ≥1MB 文件做 SHA-256 分组，删除 5 组字节级重复件，保留规范名/被任务文档引用的那份。
+- 踩坑：① “测试产物”与“用户原件”必须分开，`processed/`/`outbox/`/`assets/models` 不动；② tracked `tests/artifacts` 与 `work/ui_review` 不属于缓存，保留证据；③ 有引用的 `熔盐堆…-保真版.pdf` 不能删，改删无引用的同哈希基名副本。
+- 验证：283/283（19.86s）、Tier4 8/8、8765=200；体积 1.26G→902M（约 391MB）；无代码/管线变更。
+- 适用：工作区减负先按“运行引用/测试引用/历史证据/用户数据”四层分流，重复大文件用哈希证明后再删。
+
+## 2026-11-02 · 桌面文件工作台：阶段进度与隔离 UI 验证（P052-LiteParse-PDF自动识别）
+
+- 场景：服务端只上报 10/30/100 阶段值，界面把 30% 当精确进度；本地 App 还固定连接现有 8765 服务。
+- 做法：UI 显示不定进度和阶段说明；通过独立端口、模拟响应和合成任务核对空态/失败/成果，不替换现有 App 或服务。导入时快照模式与服务，模式请求值单独映射，保留既有偏好值。
+- 踩坑：空列表分支也需要显示上传和错误；只在前端删除完成记录会被轮询重新带回；文件本地识别不代表翻译文字不上网，说明必须放到服务选择旁。全量单测还可能条件性读取现有 PDF，运行前应核对测试内容。
+- 验证：Swift 原生状态测试 3 次通过、287/287 项单测、合成 PDF 真实 LiteParse 闭环；截图 `work/ui_review/ux-20261102-review/`。
+- 适用：本地文件处理客户端 + 后台轮询 + 可选在线服务。
+
+## 2026-10-30 · 顶栏/空状态品牌标记与 AppIcon 统一（P052-LiteParse-PDF自动识别）
+
+- 现象：换完 AppIcon 后，顶栏 26pt 和空状态 68pt 仍是旧的蓝色圆角方块 + 白色文档 SF Symbol，界面与 Dock 图标像两个产品。
+- 做法：在 `LightTheme` 新增 `LiteParseMark` 矢量视图：深墨蓝圆角底、约 39%×52% 的暖白纸页、右上折角、页尾青色光标和四角火花；顶栏 26pt、空状态 68pt 共用。小于 40pt 时文本行从三行减为两行，保留轮廓和光标；拖拽条仍用 SF Symbol，功能符号不参与品牌化。
+- 踩坑：① 不要用 `Image("AppIcon")` 依赖 `.icns` 资源加载，图标资源在 Bundle 里不等于 SwiftUI 可直接取用；画同源矢量更稳。② 26pt 下若照搬 1024 图标的细节，纸页会缩成白块；需按尺寸减少行数、给线条最小 0.55–0.7pt 下限。③ 纸页占卡片比例要按图标实际 39%×52%，而不是凭感觉用 34%×46%，否则大尺寸品牌标记会显得空。
+- 验证：Swift 零警告 2.0M；顶栏/空状态/1008/900 两档实机截图；`283/283` 单测（25.16s）。截图 `work/ui_review/ui-brandmark-final.png`、`ui-brandmark-compact.png`、`ui-brandmark-before-after.jpg`。
+- 适用：App 图标更新后，界面内的品牌标记应与 Dock/Finder 图标同源；尺寸差异用简化细节处理，不要把功能图标也强行换成品牌符号。
+
+## 2026-10-30 · App 图标从居中厚文档改为折角纸页 + 解析火花（P052-LiteParse-PDF自动识别）
+
+- 现象：旧图标是蓝色渐变底 + 居中白文档 + 四条粗横线，轮廓方正、重心居中，像通用文档模板；用户觉得“笨拙”。
+- 做法：`generate_icon.py` 重写为 2048 超采样：深墨蓝圆角底（左上冷光/右下青回光），暖白纸页逆时针倾斜 8°，右上折角露出青色纸背，三条细墨线 + 页尾青色光标，折角旁四角星火花。导出 1024 icns 及 16–512 全套尺寸。
+- 踩坑：① 旧版文档圆角过大、横线过粗，缩小后只剩一块白卡片；新版收窄纸页、圆角 26、线宽 9，16px 仍有斜向轮廓。② 纸页投影必须跟纸页一起旋转，否则会出现“纸在飘、影子没动”。③ 火花先画柔光层再叠星形，否则小尺寸下只是硬点；透明角必须保留，不能把圆角底铺满画布。
+- 验证：`sips` 取 icns 1024 PNG，角落 alpha=0；16/32/64/128/512/1024 目视走查；App bundle 图标用 `NSWorkspace` 复核；Swift 零警告 2.0M，283/283 单测（21.37s）。截图 `work/ui_review/icon-final-1024.png`、`icon-before-after.png`。
+- 适用：macOS App 图标；需要摆脱“白文档 + 蓝底”模板感时，用倾斜、折角、单一彩色焦点建立轮廓记忆点。
+
+## 2026-10-30 · 顶栏四模式平铺收为“当前模式 + 更多模式”（P052-LiteParse-PDF自动识别）
+
+- 需求：四个模式项常驻顶栏太像参数面板；只保留默认“智能双轨”，其余收进“更多模式”菜单，但四项都要可切换。
+- 做法：`LightHeaderView` 左侧显示当前模式（图标 + 短名 + 墨蓝选中片），右侧 `Menu` 内用 `Picker(.inline)` 列出 `PipelineMode.allCases`，原生勾选当前项；默认只显示“智能双轨”，选择其他模式后左侧同步更新。移除原 `ForEach` 与 `matchedGeometryEffect`。
+- 踩坑：`Menu` 在 `.borderlessButton` 样式下已自带下拉指示器；再手放 `chevron.down` 会与系统指示器争位置，实测出现左侧箭头、右侧消失，去掉自定义箭头后系统箭头正常落在右侧。互斥选项用 `Picker(.inline)` 才有原生勾选态，手写 Button + checkmark 容易在菜单里错位。
+- 验证：菜单展开四项且当前项勾选；切到“高清扫描”顶栏同步、再切回“智能双轨”均实测；Swift 零警告 1.8M；283/283 单测（22.20s）；1008/900 截图。
+- 适用：macOS SwiftUI 工具顶栏参数收口；默认项覆盖多数场景、其余模式低频但需保留时，用“当前值 + 更多”替代平铺分段控件。
+
+## 2026-10-30 · 桌面端配色从“冷白 + 系统蓝”收敛为“暖纸 + 墨蓝”（P052-LiteParse-PDF自动识别）
+
+- 现象/需求：顶部分段控件仍是系统默认的深灰轨道 + 纯白滑块，整窗冷白 + #0071E3 高亮蓝，和“学术文档工作台”的纸张/校样语义脱节；用户要求参考 oil-ui 继续优化配色。
+- 方向：把界面当成一张承托白纸的工作台——画布 #F3F1EB 暖纸色，内容卡保持纯白，文字用带蓝 undertone 的墨色 #1D2630，唯一主色收深为墨蓝 #1F5F8A；状态色去荧光（绿 #3D7A58、青 #2A737A、琥珀 #955F28、红 #B0444A）。
+- 做法：颜色集中到 `LightTheme`；分段控件轨道 #E5E2DA、选中底为 18% 墨蓝冷调片、选中文字/图标 #174B6D 并加 0.26 蓝色发丝描边；画布改暖纸竖向渐变，雾光从紫改为青；主按钮/进度条/图标统一 #2C76A0→#1C4F74 窄渐变；PDF 交付图标由红色改墨蓝，红色只留给错误。
+- 踩坑：① 不能只把强调色调深——外层表面也要有冷暖关系，否则仍像系统默认；② 选中态文字在浅轨道上必须重新算对比度，本轮确保 ≥4.5:1；③ 青色状态字在 8% 同色底上原 #2E7C84 只有 4.39:1，收深到 #2A737A 才过线；④ 白字主按钮的渐变顶端 #2C76A0 才稳过 4.5:1；⑤ 非错误语义不要用红色，否则 PDF 图标会像失败；⑥ `regularMaterial` 顶/底栏实际比画布更深，`textMuted` 在其上只有 4.3:1，footer 改用 `textSecondary` 才过线。
+- 验证：Swift 零警告构建 1.7M；283/283 单测通过（23.14s）；1008×736 与 900×700 实机截图通过；任务卡用 `ImageRenderer` 复核完成态、交付行、状态胶囊；PDF 识别/翻译管线未改。截图 `work/ui_review/ui-color-before-after.jpg`、`ui-color-control-before-after.jpg`、`ui-color-after-final.png`、`ui-color-compact-final.png`、`ui-color-task-card.png`。
+- 适用：macOS 原生 SwiftUI 工具类应用的配色收敛；尤其适合“白纸内容 + 系统蓝控件”显得像默认模板时。
+
+## 2026-10-30 · pdf2zh 合并列表页重建 + 下划线语义回贴（P052-LiteParse-PDF自动识别）
+
+- 现象：DOE 第 2 页（文件 p5）译文的 a/b/c/d/1)/2)/3) 全部挤成一段，后续行没有悬挂缩进；原页下划线按旧坐标保留，横穿未排好的中文。看起来像“线没删干净”，实际是段落结构丢失。
+- 根因：pdf2zh 的布局阶段按文本类合并相邻行，同属正文的多个列表项被并为一个段落；它只保留行级基线/类，不保留源块的列表边界、首行缩进和续行缩进，所以单纯删线或微调坐标无法恢复对应关系。
+- 做法：新增 `src/text_layout_repair.py`。只对满足门限的页面启用：译文页至少 2 个 `\x00` 段落标记、源页至少 2 个真实列表标记、源页无图片/大面积填充/过多长横线。从源页提取标题、每项首行 x、续行 x、基线和下划线语义；从当前译文提取段落文本；用 SourceHanSerif 子集重写译文页，擦掉旧正文和旧内联线，再按源语义在中文首句下画线。双语只改译文页。
+- 踩坑：① 不能把所有细线都当正文下划线——脚注线、表格线、彩色链接线必须保留；② 不能无条件重排——含图/表的页面会破坏坐标，p26（仅 bullet、无节标题）与 p27（译文无 NUL 段落标记）仍应跳过；③ 不能重新翻译，否则译文术语会漂移；④ 中文行高与源英文行高不同，必须按“段首对齐源基线、段内自然行距”处理，不能强行逐行拉伸。
+- 验证：DOE p5 恢复 7 个独立段（a/b/c/d/1)/2)/3)），519 汉字、无 `\x00`；6 条内联下划线落在对应中文术语下，另保留 1 条脚注线（共 7 条 drawings）；双语 idx9 同步，idx8 原文保持英文。p9 Figure 1 的 16 组中文标签、p11 表格 482 汉字、p13 584 汉字均无回归。283/283 单测全绿（23.46s，复跑）；单语 28 页 1.08 MB、双语 56 页 1.27 MB。截图 `work/ui_review/current-mono-p5.png`、`current-dual-p5.png`、`source-p5.png`。
+- 适用场景：pdf2zh 输出中“多个列表项被合并、缩进丢失、旧下划线穿字”的矢量页；不适用于扫描件、表格页、图片页和没有稳定列表标记的段落。
+
+## 2026-10-30 · 矢量图内文字回贴 + 孤立下划线清理（P052-LiteParse-PDF自动识别）
+
+- 现象：① pdf2zh 译文页在正文末尾留下两条横线（原为标题/内联短语下划线，文字被重排后线还在）；② Figure 1 的色块与图内标签仍是英文，只有图题和注释被译。
+- 根因：pdf2zh 稳定后端把 `figure` 与 `table` 一起放进 `vcls`，整块图内文字不进入翻译；版面重排只移动/替换文字，不删除原矢量下划线。
+- 做法：`src/figure_overlay.py` 用 OpenDataLoader 找图题上方的色块/单元格，按包含关系聚合标签；Bing 翻译；`add_redact_annot(fill=False)` + `graphics=NONE` 只擦字，按原色/原字号/原框回写；SourceHanSans 动态子集；双语按页序只改译文页。`src/pdf_cleanup.py` 只清“源文本相交 + 译文无邻近文字”的细黑横线，跳过表格页、彩色链接下划线和脚注线。
+- 踩坑：不能把所有细横线都当孤立线；第 2/4 页有彩色超链接下划线，表格页脚注线也应保留。判断条件必须同时看源文本与译文邻近文字；字体宽度要用实际 `fitz.Font.text_length` 而不是 1em 估算，否则 `insert_htmlbox` 会把“协议/协”再折一次。
+- 验证：DOE p5 清 2 条（p2/p4 彩色线、p13–15 表注线均保留）；p9 Figure 1 的 16 组标签全部回贴，色块/边框/列宽不变；275/275 单测全绿（21.4s）；单语 28 页、双语 56 页，p11 表格 482 汉字、p13 584 汉字。
+- 边界：扫描件位图内的表格/图内文字仍需 OCR 覆字；旋转页跳过。
+
+## 2026-10-30 · 表格原位回贴：OpenDataLoader bbox + 红字擦除 + 字体子集（P052-LiteParse-PDF自动识别）
+
+- 目标：矢量 PDF 表格要翻译，且必须落在原格子、保持原网格/列宽/底纹，不能像段落重排。
+- 原生核查：pdf2zh 稳定后端 `vcls` 含 `table`，表格不译；BabelDOC 0.2.33 有实验性 `--translate-table-text`（RapidOCR），本机 numpy 2.5 下 OCR 子进程报错、表格仍英文，不可用。用户记得的“实测”更可能是 Markdown/HTML 表格翻译（`translate_table` / ASME HTML 重建），不是 PDF 原位表格。
+- 做法：`src/table_overlay.py` 用 OpenDataLoader 的 cell bbox/rowspan/colspan；Bing 逐格翻译；`add_redact_annot(fill=False)` + `apply_redactions(graphics=NONE)` 只擦字不擦线；按原字号用 SourceHanSerif 回写；表注按“页底 + 小字号 + 数字开头”一并译。双语的译文页按 `2*i+offset` 回贴，原文页不动。
+- 踩坑：PyMuPDF `doc.subset_fonts()` 在该 pdf2zh 双语 PDF 上直接 segfault（`pdf_subset_fonts2`）。改为 fontTools 按实际用字动态子集（约 80 KB/字重），不调用 `subset_fonts()`；文件 0.8/1.0 MB，字形与间距正常。
+- 验证：DOE 28 页、6 个表格、123 个单元格全部回贴；p11 0→473 汉字，双语 p22 同步、p21 保持英文；单测 264/264（18.5s）。截图 `work/ui_review/table-before-after-p11.png`。
+- 边界：扫描件“图片化表格”仍只译题注；旋转页暂跳过；表格文本若被 OpenDataLoader 截断（跨页单元格），回贴也忠实于截断源。
+
+## 2026-10-30 · 表格未译定因：pdf2zh 把 table 列入 vcls 直接跳过（P052-LiteParse-PDF自动识别）
+
+- 现象：矢量文献正文已译，但 Table 1 整页/整表仍是英文，容易被误判为引擎没工作。
+- 核查：`pdf2zh 1.9.11` 同一条命令，第 10 页 3.2s 产出 587 汉字；第 11 页（Table 1）3.1s、0 汉字、48,050 拉丁字符。扫描流 `hd_scan_renderer` 第 1 页 2.8s、561 汉字，OpenDataLoader 0.42s、Chrome 正常。
+- 根因：pdf2zh `high_level.py` 的 `vcls = ["abandon","figure","table","isolate_formula","formula_caption"]`，表格框被掩蔽，不进入擦除/翻译；扫描流仅结构化表逐格译，图片化表只译题注。
+- 结论：不要直接改 `vcls`（表格会按段落重排、丢网格）。正解是独立“表格回贴层”：OpenDataLoader 取 cell+bbox → 逐格翻译 → fitz 擦原字 → 按格宽降字号回写。
+- 适用：PDF 表格翻译、pdf2zh 二次开发、双引擎排障。
+
+## 2026-10-30 · 渐变怎么加才不显乱：只给“光”和“细线”上色（P052-LiteParse-PDF自动识别）
+
+- 结论：大面只用 3–5% 透明度、大半径的蓝/紫柔光，再叠同色相窄渐变（主按钮 #0A84FF→#0066CC、进度条蓝→靛）；渐变只出现在图标、主按钮、进度条、发丝线、卡片悬浮反射，文字保持纯黑。
+- 踩坑：中文 26pt 标题整段渐变会显“落地页廉价感”，已回退纯色；按钮 hover 不要整体换渐变（会跳），改叠 10% 白色蒙层；大光斑饱和度超过 6% 就开始“花”。
+- 适用：Apple 风浅色界面的“高级感渐变”。
+
+## 2026-10-30 · 从“高饱和炫技”转向 Apple 审美的可复用配方（P052-LiteParse-PDF自动识别）
+
+- 做法：① 画布 #F5F5F7 + 纯白卡片 + `black 7.5%` 发丝线 + 极轻阴影；② 全站只留一个品牌蓝 #0071E3，彩色只给状态；③ `hiddenTitleBar` 下内容 `ignoresSafeArea(.top)`、左侧留 78pt，品牌与红绿灯同排；④ 无任务用居中 Hero（26pt 标题 + 双胶囊 CTA），有任务切轻量投递条 + 列表；⑤ 内容列统一 940pt 居中，分区标题与卡片同宽；⑥ 胶囊按钮：实心蓝主操作、白底描边次操作；⑦ App 图标重绘为蓝底白文档。
+- 踩坑：`.regularMaterial` 跟随系统深色会变黑，与写死浅色画布冲突，要么做完整动态色板、要么 `NSRequiresAquaSystemAppearance=true` 锁定浅色；排队任务给 0% 进度条会被误读为“卡住”；`matchedGeometry` 滑块动画会让滚动条抽动，列表动画必须只跟 id 集合。
+- 适用：SwiftUI 桌面工具做“Apple 产品页”观感时的取舍。
+
+## 2026-10-30 · SwiftUI 桌面端收尾：窄窗自适应、整窗拖拽与状态真实化（P052-LiteParse-PDF自动识别）
+
+- 场景：桌面端 UI 重构后的可用性收口。
+- 做法：
+  1. **窄窗自适应**：用 `onGeometryChange` 量顶栏宽度，<1080px 切紧凑态（图标胶囊 + 短状态 + “成果目录”），并把可缩放文字 `.lineLimit(1).fixedSize()`；否则 900px 最小窗口下分段控件会竖排换行。
+  2. **整窗投递**：根视图挂 `.dropDestination` + 全窗高亮遮罩（`allowsHitTesting(false)`），内层投放区保留自己的高亮，拖到卡片/标题/空白都能收。
+  3. **状态不能写死**：胶囊文案改为 `BackendConnectionStatus.shortLabel`，否则后端未启动也显示“就绪”。
+  4. **`accessibilityReduceMotion`**：脉冲、呼吸、漂浮全部降级为静态；图标按钮补 `.help` 与 `.accessibilityLabel`；`textMuted` 加深到 ≥4.5:1。
+- 踩坑：`LinearGradient` 不能直接 `.opacity()`；`onGeometryChange(for:of:action:)` 要在 macOS 15+ 才可用（本项目基准 macOS 26）。
+- 适用场景：SwiftUI 桌面应用的响应式顶栏与拖放体验。
+
+## 2026-10-30 · 每秒轮询 + ScrollView 级 spring 动画 = 右侧滚动条反复抽动（P052-LiteParse-PDF自动识别）
+
+- 现象：重构后用户看到右侧滚动条持续反复滑动/抽动。
+- 根因：两层叠加——① `refreshTasks()` 每秒把解码结果无条件赋给 `@Published tasks`，即使内容完全相同也触发整棵列表重渲染；② 把 `.animation(.spring, value: manager.tasks)` 挂在了 `ScrollView` 上，容器尺寸每次重算都被弹簧动画带动，滚动条滑块因此反复滑动。
+- 做法：① 发布前做等值判断 `if fetchedTasks != self.tasks`；② 动画下沉到列表容器，并把 key 换成稳定的 `tasks.map(\.id)`；③ `LazyVStack` 改非惰性 `VStack`（任务上限 200），消除轮询时的可见区重算。
+- 验证：滚动后连续抓 4 帧（1s 间隔），对窗口最右 40px 滚动条区域做像素差，**变更像素 = 0**；全帧差异仅来自预期的脉冲动画。
+- 踩坑：SwiftUI 里“动画打在滚动容器上”比“不动画”更糟——它会把滚动偏移、指示器尺寸一并纳入动画事务。
+- 适用场景：SwiftUI 列表 + 定时轮询的数据面板。
+
+## 2026-10-30 · SwiftUI 浅色工作台“更饱和 + 更丝滑”的四个抓手（P052-LiteParse-PDF自动识别）
+
+- 场景：用户要求把原本偏灰的浅色界面做得更饱和、动效更跟手。
+- 结论与做法：
+  1. **饱和度不等于加深**：画布用蓝/紫/青三色低透明度大半径光斑叠渐变底，卡片保持纯白，发丝线从黑 6% 改为“品牌蓝 10%”，整体就“有颜色”但不脏。
+  2. **丝滑的关键是 matchedGeometryEffect**：分段控件的白色滑块用 `matchedGeometryEffect` + `spring(response:0.34,dampingFraction:0.76)`，比淡入淡出高级一个量级。
+  3. **悬浮必须“抬升 + 描边 + 阴影”三件套**：只改背景色看不出层次；渐变描边用 `strokeBorder(AnyShapeStyle(brandGradient))`，阴影同时变大变蓝。
+  4. **状态要动但要克制**：进度条用 spring 追进度 + 发光，状态图标用扩散光环（1.6s repeatForever），不要旋转整个图标，否则抢戏。
+- 踩坑点：① SF Symbol `textformat` 在中文环境会被本地化成“格式”字样，分段控件要用不随语言变化的符号（本例改 `text.alignleft`）；② `LinearGradient` 没有 `.opacity()`，需要透明度包一层或转 `AnyShapeStyle`，否则编译不过；③ macOS 14+ 的 `onChange(of:perform:)` 已弃用，改双参闭包可消警告。
+- 适用场景：SwiftUI 浅色生产力应用的渐进式视觉升级。
+
+## 2026-10-30 · 矢量管线验收：pdf2zh 不翻译表格，页码孤字符会被误译（P052-LiteParse-PDF自动识别）
+
+- 场景：`DOE-STD-1271-2025.pdf`（28 页，矢量，含跨 4 页的大表）端到端验收。
+- 结果：59 秒交付 mono 28 页 / dual 56 页、10,718 汉字；manifest/归档/原子发布均正常。
+- 发现的问题：① **pdf2zh 矢量流对表格只保留原文不翻译**——Table 1 整页（p11–12 及 p13–14 表内文字）保持英文，正文已译；② 罗马页码 `i` 被译成“我”，属孤字符误译。
+- 结论与做法：验收不能只看“产物存在 + 总字数”，要**逐页统计汉字/英文词比**，否则整页未译会被平均掉；表格密集型文档若要求全文中文，应走 OpenDataLoader + 表格翻译的 HD 管线，或增加“表格页回填”后处理。
+- 适用场景：所有基于 pdf2zh 的矢量 PDF 翻译验收。
+
+## 2026-10-30 · 本地 Web 工作台安全加固 + 双轨状态机重构：四个可复用模式（P052-LiteParse-PDF自动识别）
+
+- 场景：按评审结论一次性修完 P0-2..5、全部 P1 与 P2 漂移，260/260 单测通过，并做了真实页面冲烟。
+- 结论与做法：
+  1. **本地 HTTP 服务的同源防护三件套**：`Host` 白名单（只认监听的 loopback 地址与端口）+ 写操作 `Origin` 校验 + CSP `script-src 'nonce-…'`。做法要点：把页面里所有内联 `onclick/onchange` 改成 `addEventListener`，否则 nonce CSP 会把按钮全部杀死；每次渲染生成新 nonce 并同步写进响应头。
+  2. **投递即认领消除双写者竞争**：web 工作台上传后直接原子落到 `processing/<stem>.pdf`（占位 + `.tmp` 替换），而不是先写 `inbox/` 再等 watcher 来抢；watcher 只在启动时扫一次 `processing/`，天然互斥。配合“产物名纳入发号”，同名不同文档自动 `-2`。
+  3. **用 manifest 替代“产物存在即完成”**：交付全部写入 `outbox/.<stem>.manifest.json`（源文件 sha256 + 产物清单），下次启动按哈希比对；无 manifest 的残留 mono/dual 视为半交付并清理。这同时解决了“同名不同文档被静默跳过”与“mono 先落盘、dual 缺失却判成功”。
+  4. **路径沙箱只用 `Path.relative_to`**，不用字符串前缀；下载只开放 `outbox`，并补 `X-Content-Type-Options: nosniff` 与 RFC5987 文件名。
+- 踩坑点：① CSP 加 nonce 前必须先清掉所有内联事件属性，否则功能静默失效（页面看着正常、按钮全不动）；② 测试断言“文件在 inbox”会把“投递即认领”误判为回归，需改为等待终态后校验归档字节；③ `with_suffix(".pdf.tmp")` 生成的是同名非隐藏文件，崩溃后清理逻辑接不住，临时名必须显式加前导点。
+- 适用场景：任何“本地 HTTP 工作台 + 文件投递目录 + 多产物交付”的离线工具。
+
+## 2026-10-30 · 一个动作两条执行路径：桌面端点一次按钮弹两个 Finder 窗口（P052-LiteParse-PDF自动识别）
+
+- 场景：Swift 桌面端的「打开产物目录」按钮，点一次弹出两个 Finder 窗口。
+- 根因：`BackendManager.revealOutbox()` 先 POST `/api/reveal_outbox`（后端 `subprocess.run(["open", dir])`），紧接着又用 `NSWorkspace.shared.open()` 本地开一次——同一意图写了两条执行路径，两条都生效。
+- 做法：两条路径只保留一条。改为共用私有 `revealDirectory(at:)`：先 `createDirectory(withIntermediateDirectories: true)`、再 `fileExists` 门禁、最后只调一次 `NSWorkspace.open`；服务端 `/api/reveal_*` 端点保留给 Web UI，不再从桌面端调用。重编译后用 `strings | grep -c 'api/reveal'` = 0 验证 HTTP 调用确实已从二进制移除。
+- 踩坑点：**“接口 + 本地回退”写成并联而不是串联**，是双开类 bug 的高发模式；要么只留一条，要么做幂等去重。验证时优先检查产物内部特征（符号/字符串/请求次数），比看 UI 可靠。
+- 适用场景：任何同时具备本地能力与后端 API 的 macOS/Electron 桌面工具。
+
+## 2026-10-30 · 单元测试真跑 `open`：每跑一次单测就弹 2 个 Finder 窗口（P052-LiteParse-PDF自动识别）
+
+- 场景：用户反馈「每次你操作的时候都会自动给我拉起来几个文件夹」，截图显示 Finder 停在 `$TMPDIR`，满屏 `TemporaryDirectory.*`。
+- 根因：`tests/test_web_app.py::test_reveal_endpoints` 用真实 HTTP 请求打了 `/api/reveal_outbox` 与 `/api/reveal_inbox`，端点内是 `subprocess.run(["open", dir])`；测试的 `project_root` 恰好是 `tempfile.TemporaryDirectory`，于是每次跑测弹 2 个窗口，测试结束目录被删后 Finder 落到 `$TMPDIR` 形成残留列表。
+- 做法：① 把副作用收进模块级 `reveal_in_finder(path)`，先 `is_dir()` 门禁、`OSError` 容错，不存在就返回 False；② 端点改成调用它并回传 `revealed`；③ 测试 `patch("src.web_app.reveal_in_finder")` 并断言入参，新增「目录不存在时不得调用 open」回归；④ 全量 249/249 通过。
+- 踩坑点：**测试要验证「点击后打开目录」这类行为，验证的是“是否以正确参数调了打开器”，不是“真的把 Finder 拉起来”**。副作用函数必须可注入；另外任何 `open`/`osascript`/`NSWorkspace` 都要加存在性门禁，否则删目录后 Finder 会回退到父目录，看起来像“残留垃圾堆”。
+- 适用场景：所有带「在 Finder 中显示 / 打开文件」功能的桌面工具与其测试套件。
+
+## 2026-10-30 · 本地 Web 工作台与双轨状态机的只读评审：五类可复用缺陷模式（P052-LiteParse-PDF自动识别）
+
+- 场景：对 10.6k 行 `src/` + 3.1k 行 Swift 的全量只读评审，跑通 248/248 单测并实测加密 PDF 路径。
+- 结论与做法（五类可复用缺陷模式）：
+  1. **「仅监听 127.0.0.1」不等于安全**：`web_app` 无 Host / Origin 校验。任意网页可用 multipart POST 免预检地把文件写进 `inbox/`；DNS rebinding 后还能读到 `/api/tasks`、`/api/download`。做法：校验 Host 白名单 + 写操作校验同源 Origin，长跑服务再加启动 token。
+  2. **前端 `innerHTML` 拼接服务端字符串 = 存储型 XSS**：PDF 文件名在 APFS 上可以含 `<` `>` 引号，原样拼进 `innerHTML` 就能执行；同理异常文本 `t.error`。做法：先 `escapeHTML()` 或改用 `textContent`，并补 CSP。
+  3. **字符串前缀做路径沙箱是经典漏洞**：`str(p).startswith(str(root))` 会放过 `root-suffix/xxx`。做法：`Path.is_relative_to()`，并把可读目录收窄到 `outbox`。
+  4. **「产物存在即视为已完成」的状态判断不可靠**：同名不同文档会被静默跳过（只归档 + 一条 warning）；多产物管线（mono 先落盘、dual 后落盘）中途失败或被杀进程后，残留的 mono 会让下一轮直接判成功。做法：交付完成后写 manifest（源文件 sha256 + 产物清单），以 manifest 而非文件名判完成。
+  5. **配置校验写成死代码**：`bool(raw.get(k, False))` 后再 `isinstance(v, bool)`，转换在前导致校验恒真，字符串 `"false"` 会变成 `True`（此处会静默开启离线翻译重活）。做法：先取原值判类型，再赋值。
+- 附加发现（记录备查）：默认 `dual_track_mode=auto` + `pdf2zh_service=bing` 会把正文文本发往第三方翻译，与 AGENTS.md「保持本地离线处理、不上传 PDF 内容」直接冲突——**合规红线必须落在默认配置层，不能只写在文档里**；README 宣称的 `log_max_bytes`/`log_backup_count` 无任何代码读取（硬编码 1MB×3）；归档用 `unlink()` 覆盖同名历史文件而 watcher 用 `unique_path`，同一项目两套归档语义。
+- 踩坑点：单测全绿（248/248）与安全/状态机正确性无关——本次 5 项 P0 全部在测试盲区（无 Origin、无转义、无路径穿越、无同名冲突、无半交付断言）。
+- 适用场景：任何「本地 HTTP 工作台 + 文件投递目录 + 多产物交付」的桌面工具。
+
 ## 2026-10-26 · 浅色极简桌面应用六处视觉精修与三级圆角统一（P052-LiteParse-PDF自动识别）
 
 - 场景：用户确认 Raycast/Linear 浅色骨架方向后，需要进一步精修视觉层提升质感。

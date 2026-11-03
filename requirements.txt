@@ -1,0 +1,12 @@
+# Python 运行时依赖（其余能力来自外部 CLI，见 README「Stack」）
+# 安装：python3 -m pip install -r requirements.txt
+PyMuPDF>=1.24,<2.0
+fonttools>=4.40  # 可选：矢量表格译文按用字裁字体；缺失时回退内置 CJK 字体
+
+# 外部依赖（不走 pip，需单独安装并确认在 PATH 中）：
+#   lit (LiteParse) 2.4.0
+#   OpenDataLoader-PDF + OpenJDK（opendataloader_extractor 使用）
+#   poppler (pdftoppm/pdfinfo)、tesseract 及 chi_sim/eng 语言数据
+#   Google Chrome（--headless 打印）
+#   ~/.local/venvs/pdf2zh（矢量论文翻译）
+#   ~/.local/venvs/paddleocr（可选 OCR 引擎）

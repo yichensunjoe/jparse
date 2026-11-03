@@ -912,17 +912,20 @@ def create_dual_interleaved_pdf(
             dual_doc.insert_pdf(trans_doc, from_page=p_idx, to_page=p_idx)
 
     output_dual_pdf_path = Path(output_dual_pdf_path).resolve()
-    tmp_dual = output_dual_pdf_path.with_suffix(".pdf.tmp")
+    # 必须是隐藏临时名，否则崩溃后 `_cleanup_partials`（只清 `.<stem>*`）接不住它。
+    tmp_dual = output_dual_pdf_path.parent / (".%s.tmp" % output_dual_pdf_path.name)
     try:
         dual_doc.save(str(tmp_dual))
-        dual_doc.close()
-        orig_doc.close()
-        trans_doc.close()
         tmp_dual.replace(output_dual_pdf_path)
     except Exception:
-        if tmp_dual.exists():
-            tmp_dual.unlink()
+        tmp_dual.unlink(missing_ok=True)
         raise
+    finally:
+        for document in (dual_doc, orig_doc, trans_doc):
+            try:
+                document.close()
+            except Exception:
+                pass
 
     logger.info("双语对照交替 PDF 交付完成: %s (%d pages, %d bytes)",
                 output_dual_pdf_path.name, len(selected_pages) * 2, output_dual_pdf_path.stat().st_size)
@@ -990,7 +993,10 @@ def process_scanned_pdf_to_hd_pdf(
         mono_html_path.write_text(mono_html_content, encoding="utf-8")
 
         mono_pdf_tmp = tmp_dir / f"{stem}-中文精译版.pdf"
-        convert_html_to_pdf_via_chrome(mono_html_path, mono_pdf_tmp)
+        if not convert_html_to_pdf_via_chrome(mono_html_path, mono_pdf_tmp):
+            raise RuntimeError(
+                "无头 Chrome 未能生成中文精译版 PDF（请确认 Google Chrome 可用且可无头启动）"
+            )
 
         # Atomic copy to outbox
         mono_dest = outbox_dir / f"{stem}-中文精译版.pdf"

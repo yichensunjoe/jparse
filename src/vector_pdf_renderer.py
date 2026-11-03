@@ -93,6 +93,8 @@ def process_vector_pdf_with_pdf2zh(
             mono_candidates = all_pdfs[:1]
 
         # Atomically move to outbox
+        mono_dest: Optional[Path] = None
+        dual_dest: Optional[Path] = None
         if mono_candidates:
             mono_src = mono_candidates[0]
             mono_dest = outbox_dir / f"{stem}-中文精译版.pdf"
@@ -110,5 +112,86 @@ def process_vector_pdf_with_pdf2zh(
             tmp_dest.replace(dual_dest)
             output_files.append(dual_dest)
             logger.info("已交付双语对照矢量 PDF: %s (%d bytes)", dual_dest.name, dual_dest.stat().st_size)
+
+        # pdf2zh leaves table regions untouched.  Re-insert translated cells
+        # into their original boxes so the table grid stays identical.
+        if mono_dest or dual_dest:
+            try:
+                from src.table_overlay import apply_table_translations
+                painted = apply_table_translations(
+                    pdf_path,
+                    mono_pdf=mono_dest,
+                    dual_pdf=dual_dest,
+                    service=service,
+                    pages=pages,
+                )
+                if painted:
+                    logger.info("表格单元格翻译完成: %d 个单元格已回贴原网格", painted)
+            except Exception as exc:
+                logger.warning("表格单元格回贴失败，保留 pdf2zh 原始表格: %s", exc)
+
+            # Vector figures are excluded by pdf2zh together with tables.
+            # Put translated labels back inside the original boxes.
+            try:
+                from src.figure_overlay import apply_figure_translations
+                figure_painted = apply_figure_translations(
+                    pdf_path,
+                    mono_pdf=mono_dest,
+                    dual_pdf=dual_dest,
+                    service=service,
+                    pages=pages,
+                )
+                if figure_painted:
+                    logger.info("矢量图内文字翻译完成: %d 组已回贴原图", figure_painted)
+            except Exception as exc:
+                logger.warning("矢量图内文字回贴失败，保留原始图内文字: %s", exc)
+
+            # Bitmap figures (diagrams/flowcharts embedded as raster images).
+            # In-place OCR, erasure, translation, and replacement inside PDF.
+            try:
+                from src.bitmap_figure_translator import apply_bitmap_figure_translations
+                bitmap_figures_painted = apply_bitmap_figure_translations(
+                    pdf_path,
+                    mono_pdf=mono_dest,
+                    dual_pdf=dual_dest,
+                    service=service,
+                    pages=pages,
+                )
+                if bitmap_figures_painted:
+                    logger.info("位图图内文字翻译完成: %d 张图片已原位替换", bitmap_figures_painted)
+            except Exception as exc:
+                logger.warning("位图图内文字回贴失败，保留原始位图: %s", exc)
+
+            # pdf2zh can leave an old heading underline behind after it
+            # re-flows the heading text into a paragraph.
+            try:
+                from src.pdf_cleanup import remove_orphan_underlines
+                removed = remove_orphan_underlines(
+                    pdf_path,
+                    mono_pdf=mono_dest,
+                    dual_pdf=dual_dest,
+                    pages=pages,
+                )
+                if removed:
+                    logger.info("清理 pdf2zh 孤立标题下划线: %d 条", removed)
+            except Exception as exc:
+                logger.warning("孤立标题下划线清理失败: %s", exc)
+
+            # On pages with lettered/numbered lists pdf2zh merges every item
+            # into one paragraph, so labels such as "b." and "1)" end up in
+            # the middle of the previous line.  Rebuild only those pages using
+            # the source page's baselines and hanging indents.
+            try:
+                from src.text_layout_repair import repair_merged_list_layout
+                repaired = repair_merged_list_layout(
+                    pdf_path,
+                    mono_pdf=mono_dest,
+                    dual_pdf=dual_dest,
+                    pages=pages,
+                )
+                if repaired:
+                    logger.info("pdf2zh 段落合并页重排: %d 页", repaired)
+            except Exception as exc:
+                logger.warning("pdf2zh 段落合并页重排失败: %s", exc)
 
     return output_files
