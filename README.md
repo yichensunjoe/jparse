@@ -1,8 +1,9 @@
-# LiteParse PDF 自动识别
+# JParse — 学术级 PDF 智能重构与排版引擎
 
 ## Purpose
 
-基于本机 LiteParse 2.4.0，实现一个 macOS 本地后台自动化：将 PDF 放入 `inbox/`，待文件写入稳定后自动识别，并在 `outbox/` 同时保留排好版的 HTML 与便于 Agent 处理的 Markdown。Markdown 会自动合并同一自然段内由 PDF/OCR 版面造成的软换行。全程不调用 LLM。
+基于确定性本地算法与学术级排版引擎，实现一个 macOS 本地桌面与后台自动化中枢 **JParse**：
+将 PDF 放入 `inbox/` 或直接拖入桌面端 `JParse.app`，自动识别文档类型（现代矢量文献 / 扫描书籍），并在 `outbox/` 交付出版级单语精译版与双语对照版 PDF，同时保留排好版的 HTML 与便于 Agent 分析的纯净 Markdown。全程不调用大模型，原始 PDF 永不上传。
 
 ## 范围
 
@@ -56,6 +57,8 @@
 
 ## 可双击的入口
 
+- [`启动JParse桌面应用.command`](启动JParse桌面应用.command)：启动 macOS 原生 JParse 桌面端 Studio
+- [`打开交互应用.command`](打开交互应用.command)：启动本地 Web 交互式工作台（带批量拖拽与实时预览）
 - [`打开PDF投递箱.command`](打开PDF投递箱.command)
 - [`打开识别结果.command`](打开识别结果.command)
 - [`查看运行状态.command`](查看运行状态.command)

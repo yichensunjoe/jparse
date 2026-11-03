@@ -2,15 +2,15 @@
 
 > 交接文档：每次开新会话先读本文件。更新规则见 `AGENTS.md`「HANDOFF 交接规则」。
 
-## 当前状态（2026-11-02）
+## 当前状态（2026-11-03）
 
-- **位图图例原位翻译与重绘封装（2026-11-02）**：攻克学术论文内嵌位图（PNG/JPEG，如 Figure 1 流程图、Figure 2 神经网络结构）中英文未被翻译的缺陷。完成方案 B 落地并封装为 `src/bitmap_figure_translator.py`，无缝接入 `src/vector_pdf_renderer.py` 流水线。具备 PaddleOCR 1:1 坐标检测、多行聚合、数学变量（$x_1, x_2, y_1$ 等）免触碰门禁、容器边界底色采样、平滑擦除、思源黑体抗锯齿重绘与 PyMuPDF `replace_image(xref)` 原位无损替换。新增配套单测 `tests/test_bitmap_figure_translator.py`，全量 293/293 单测全绿（29.4s），macOS 原生客户端重新编译打包（2.4M，零警告）。
-- **模式收口与极简降噪（2026-11-02）**：彻底隐藏界面模式切换入口，所有任务默认走“智能双轨”自动路由；移除投递卡片上的翻译选择与隐私说明，投递区彻底回到纯净无干扰状态（翻译引擎保留在设置窗口 ⌘,）。顶栏仅留品牌与右侧状态操作；Web 工作台路由下拉替换为隐藏域。重新编译打包交付 `LiteParse Studio.app`（2.4M，零警告），实机运行并截图验收；Tier3/Tier4 全绿通过。
-- **UI/UX 收口（2026-11-02）**：沿用暖纸与墨蓝，导入区就近显示翻译服务及数据出口；区分原位本地翻译和 Google 适用范围，修正空态错误不可见、伪进度、模式路由值、批次设置漂移及完成记录刷新复现。原生隔离界面截图见 `work/ui_review/ux-20261102-review/`，独立视觉评审 1 轮；合成 PDF 真实 LiteParse 闭环通过。
-- **设置与主题（2026-11-02）**：新增原生 `Settings` 窗口（通用/外观/关于），顶栏齿轮与应用菜单「设置…」（⌘,）均可打开；通用页选择输出文件夹（`NSOpenPanel` → 后端 `GET/POST /api/settings` 真实切换，目录写入探测 + 下载沙箱）、识别模式与翻译服务默认值；外观页提供墨蓝/松绿/紫檀/岩灰 4 个强调色与暖纸/雾灰/米白 3 个底色。`LightTheme` 改为动态令牌，`themeRevision` 驱动主视图全树刷新；输出路径与主题写 UserDefaults，后端重连自动重放。
-- 进行中：`feat/ui-polish` 分支工作区改动准备统一提交，待合并入 `main`。
+- **全栈重命名为 JParse（2026-11-03）**：已完成品牌升级。GitHub 远程私有仓库重命名为 `yichensunjoe/jparse`（`git remote` 同步更新）；macOS 原生桌面应用重构并打包为 `JParse.app`（2.4 MB，ad-hoc 签名，送入 `outbox/JParse.app`）；启动脚本命名为 `启动JParse桌面应用.command`；Web 工作台与文档全面更新为 JParse；本地项目目录严格保留 `P052-LiteParse-PDF自动识别` 不变。全量 293/293 单测全绿（22.4s）。
+- **位图图例原位翻译与重绘封装（2026-11-02）**：攻克学术论文内嵌位图（PNG/JPEG，如 Figure 1 流程图、Figure 2 神经网络结构）中英文未被翻译的缺陷。完成方案 B 落地并封装为 `src/bitmap_figure_translator.py`，无缝接入 `src/vector_pdf_renderer.py` 流水线。具备 PaddleOCR 1:1 坐标检测、多行聚合、数学变量（$x_1, x_2, y_1$ 等）免触碰门禁、容器边界底色采样、平滑擦除、思源黑体抗锯齿重绘与 PyMuPDF `replace_image(xref)` 原位无损替换。新增配套单测 `tests/test_bitmap_figure_translator.py`，全量 293/293 单测全绿。
+- **模式收口与极简降噪（2026-11-02）**：彻底隐藏界面模式切换入口，所有任务默认走“智能双轨”自动路由；移除投递卡片上的翻译选择与隐私说明，投递区彻底回到纯净无干扰状态（翻译引擎保留在设置窗口 ⌘,）。顶栏仅留品牌与右侧状态操作；Web 工作台路由下拉替换为隐藏域。
+- **下一步**：双击 `启动JParse桌面应用.command` 或打开 `outbox/JParse.app` 直接使用。
 
 ## 近期轮次（最新在上，保留全部）
+- 2026-11-03（全栈重命名为 JParse）：根据用户要求将项目整体命名为 JParse，覆盖 GitHub 远程私有仓库（yichensunjoe/jparse）、macOS 桌面端（JParse.app）、Web 交互工作台（JParse 交互式工作台）、文档及桌面启动脚本（启动JParse桌面应用.command），严格保留本地项目文件夹路径不变。清理旧应用并重新编译打包 JParse.app（2.4M，零警告），全量 293/293 单元测试全绿，代码已提交并推送到远端 main 分支。下一步：双击启动脚本或 JParse.app 即可使用。
 - 2026-11-02（位图图例原位翻译模块化封装与合入）：用户反馈学术论文中位图流程图/结构图未翻译，完成方案 B（PaddleOCR 1:1 检测 + 领域分词聚合 + 变量保护 + 底色采样平滑擦除 + 思源黑体抗锯齿重绘 + PyMuPDF replace_image 原位替换）。封装为 src/bitmap_figure_translator.py 并接入 vector_pdf_renderer 流水线；新增 tests/test_bitmap_figure_translator.py，293/293 单测全绿通过；macOS 客户端重编译 2.4M 签名就绪。
 - 2026-11-02（模式收口与极简降噪：隐藏模式与投递区翻译选项）：按用户要求完全隐藏模式切换入口，避免用户产生模式选择与区别的疑惑，默认锁死智能双轨。移除投递卡片上的“新任务翻译 [ Bing | Google ]”与隐私声明，投递区彻底回到纯白极简状态（翻译服务移入偏好设置 ⌘,）。顶栏移除模式控件，Web UI 路由下拉替换为隐藏域。重打包桌面 App（2.4M，零警告），实机运行并截图验收，287/287 单测全绿（23.88s），Tier3/Tier4 回归通过。
 - **工程减负（2026-10-30）**：仅删无运行时/测试引用内容——`.pytest_cache`、`.ruff_cache`、`__pycache__`、`.DS_Store`、旧 `audit_screenshots/`（25M）、4 个未跟踪测试生成目录（约 35M）、`work/acceptance_preview`，以及 5 组字节级重复件（约 330M，保留规范名/被引用名）。`processed/` 676M→348M，`outbox/` 292M→290M，总体 1.26G→902M（约 391MB）。保留原件、交付物、`assets/models`、当前 UI 证据和 tracked QA 材料；283/283（19.86s）、Tier4 8/8、8765=200。

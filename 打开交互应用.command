@@ -13,5 +13,5 @@ for cand in "$HOME/.local/share/agent-tools/bin/python3" \
     fi
 done
 
-echo "正在启动 LiteParse 交互式工作台 (支持拖放单文件与整套文件夹)..."
+echo "正在启动 JParse 交互式工作台 (支持拖放单文件与整套文件夹)..."
 "$PYTHON_BIN" src/web_app.py

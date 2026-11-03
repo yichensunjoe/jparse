@@ -4,6 +4,20 @@
 
 规则：执行任务前先读本文件；任务完成后**双写**——先追加本文件，再同步追加总库（见 AGENTS.md）。
 
+## 2026-11-03 · 全栈重构与品牌统一命名：从 LiteParse 到 JParse（P052-LiteParse-PDF自动识别）
+
+- 场景：用户要求将整体项目命名为 **JParse**，覆盖 GitHub 远程私有仓库（`yichensunjoe/jparse`）、macOS 原生桌面应用（`JParse.app` / `JParse Studio`）、Web 工作台与可双击启动脚本，同时严格遵照“保留本地项目目录名 `P052-LiteParse-PDF自动识别` 不变”的约束。
+- 做法：
+  ① 远程仓库重命名：使用 `gh repo rename jparse --yes`，GitHub 自动重命名并无缝重定向，本地 `origin` 远端地址自动更新为 `https://github.com/yichensunjoe/jparse.git`；
+  ② macOS 桌面端重构：更新 `Info.plist`（Bundle ID 改为 `com.reasonix.jparse`，Executable/Name 改为 `JParse`）、`build_macos_app.sh`、`App.swift`、`LightTheme.swift`、`LightHeaderView.swift`、`LightDropZoneView.swift`、`SettingsView.swift`，清理旧包后重新编译产出 `JParse.app`（2.4 MB，ad-hoc 签名），保持 `LiteParseMark` 别名向后兼容；
+  ③ 脚本与 Web 统一：将 `启动LiteParse桌面应用.command` 重命名为 `启动JParse桌面应用.command` 并指向 `JParse.app`；更新 `打开交互应用.command` 与 `src/web_app.py` 品牌展示为 `JParse 交互式工作台`；
+  ④ 底层区分：内部命令行解析调用工具 `lit`（版本 2.4.0）作为底层无状态二进制保留，避免影响解析引擎功能。
+- 踩坑点：
+  ① 单行大括号替换风险：在 Swift 文件中进行小粒度字符替换时必须附带足够的上下文多行匹配，防止将全部类/结构体的闭合括号全局误替换；
+  ② 命令脚本重命名：在 git 下使用 `git mv` 维护文件名跟踪，并在 `README.md` 双击入口中同步暴露 `启动JParse桌面应用.command` 与 `打开交互应用.command`。
+- 验证：全量 293/293 单元测试全绿通过（22.4s），macOS App 零警告编译并送入 `outbox/JParse.app`，GitHub 远程仓库推送验证通过。
+- 适用场景：已运行成熟工具链与原生桌面应用进行品牌升级与重命名时，确保远程 repo、客户端二进制、Web UI 及启动脚本多端同步，且底层算法/工具库保持独立解耦。
+
 ## 2026-11-02 · 矢量论文内嵌位图图例的原位翻译与重绘（P052-LiteParse-PDF自动识别）
 
 - 场景：用户反馈在处理学术论文（如 MDPI、Springer、IEEE）时，正文虽是矢量文字并已被翻译，但论文内的流程图、网络结构图（如 Figure 1 代理模型流程、Figure 2 神经网络结构）中的英文文字依然未翻译。

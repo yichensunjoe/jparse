@@ -41,10 +41,10 @@ public struct LightHeaderView: View {
 
     private var brand: some View {
         HStack(spacing: 9) {
-            LiteParseMark(size: 26)
+            JParseMark(size: 26)
 
             HStack(spacing: 4) {
-                Text("LiteParse")
+                Text("JParse")
                     .font(.system(size: 13.5, weight: .semibold))
                     .foregroundStyle(LightTheme.textPrimary)
                 Text("Studio")

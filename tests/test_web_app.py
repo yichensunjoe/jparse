@@ -48,7 +48,7 @@ class TestLiteParseWebApp(unittest.TestCase):
         with urlopen(req) as resp:
             self.assertEqual(resp.status, 200)
             body = resp.read().decode("utf-8")
-            self.assertIn("LiteParse 交互式工作台", body)
+            self.assertIn("JParse 交互式工作台", body)
             self.assertIn("webkitdirectory", body)
             self.assertIn("拖入单个 PDF", body)
 

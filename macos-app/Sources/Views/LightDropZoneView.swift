@@ -147,7 +147,7 @@ public struct LightDropZoneView: View {
     }
 
     private var appMark: some View {
-        LiteParseMark(size: 56)
+        JParseMark(size: 56)
             .scaleEffect(isTargeted ? 1.05 : 1.0)
             .animation(.spring(response: 0.34, dampingFraction: 0.72), value: isTargeted)
     }

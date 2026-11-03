@@ -189,7 +189,7 @@ public extension View {
 
 /// 与 AppIcon 同源的品牌标记：深墨蓝圆角底、轻斜折角纸页、页尾光标与解析火花。
 /// 同一套矢量语言用于顶栏 26pt 与空状态 68pt，避免两处各画一个文档。
-struct LiteParseMark: View {
+struct JParseMark: View {
     var size: CGFloat
     var showsShadow: Bool = true
 
@@ -295,6 +295,8 @@ struct LiteParseMark: View {
         .accessibilityHidden(true)
     }
 }
+
+typealias LiteParseMark = JParseMark
 
 private struct FoldedPageShape: Shape {
     func path(in rect: CGRect) -> Path {

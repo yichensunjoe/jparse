@@ -267,7 +267,7 @@ INDEX_HTML = """<!DOCTYPE html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LiteParse 文档智能中枢 · 双轨极速转换平台</title>
+    <title>JParse 文档智能中枢 · 双轨极速转换平台</title>
     <style>
         :root {
             --bg: #0c0f17;
@@ -699,7 +699,7 @@ INDEX_HTML = """<!DOCTYPE html>
         <div class="brand">
             <div class="logo-icon">⚡️</div>
             <div>
-                <div class="brand-title">LiteParse 交互式工作台</div>
+                <div class="brand-title">JParse 交互式工作台</div>
                 <div class="brand-subtitle">双轨智能版面路由器 · OpenDataLoader 顶尖抽取与出版级高清重构</div>
             </div>
         </div>

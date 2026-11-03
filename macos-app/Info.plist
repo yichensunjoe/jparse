@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>zh_CN</string>
 	<key>CFBundleDisplayName</key>
-	<string>LiteParse Studio</string>
+	<string>JParse</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
@@ -22,19 +22,19 @@
 		</dict>
 	</array>
 	<key>CFBundleExecutable</key>
-	<string>LiteParseStudio</string>
+	<string>JParse</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.reasonix.liteparse.studio</string>
+	<string>com.reasonix.jparse</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>LiteParse Studio</string>
+	<string>JParse</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>2.0.0</string>
+	<string>2.1.0</string>
 	<key>CFBundleVersion</key>
 	<string>2026.10</string>
 	<key>LSMinimumSystemVersion</key>

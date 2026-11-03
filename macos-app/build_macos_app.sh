@@ -4,7 +4,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-APP_NAME="LiteParse Studio"
+APP_NAME="JParse"
 APP_BUNDLE="$PROJECT_ROOT/$APP_NAME.app"
 OUTBOX_APP="$PROJECT_ROOT/outbox/$APP_NAME.app"
 
@@ -49,7 +49,7 @@ SWIFT_SOURCES=(
 )
 
 swiftc -O -parse-as-library "${SWIFT_SOURCES[@]}" \
-    -o "$APP_BUNDLE/Contents/MacOS/LiteParseStudio"
+    -o "$APP_BUNDLE/Contents/MacOS/JParse"
 
 # 5. 本地 ad-hoc 代码签名
 echo "🔏 正在进行本机安全签名..."
@@ -62,9 +62,9 @@ rm -rf "$OUTBOX_APP"
 cp -R "$APP_BUNDLE" "$OUTBOX_APP"
 
 echo "=================================================="
-echo "🎉 恭喜！LiteParse Studio 原生 Liquid Glass 应用构建完成！"
+echo "🎉 恭喜！JParse 原生桌面应用构建完成！"
 echo "   应用程序路径: $APP_BUNDLE"
 echo "   交付产物路径: $OUTBOX_APP"
 echo "   大小: $(du -sh "$APP_BUNDLE" | cut -f1)"
-echo "   双击打开即可直接享受原生 Liquid Glass 液态毛玻璃交互！"
+echo "   双击打开即可直接享受极简文献重构交互！"
 echo "=================================================="

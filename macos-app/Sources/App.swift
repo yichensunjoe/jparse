@@ -3,7 +3,7 @@ import AppKit
 
 @available(macOS 26.0, *)
 @main
-struct LiteParseGlassApp: App {
+struct JParseApp: App {
     var body: some Scene {
         WindowGroup {
             MainContentView()

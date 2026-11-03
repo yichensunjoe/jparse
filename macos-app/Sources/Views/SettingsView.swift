@@ -198,7 +198,7 @@ public struct SettingsView: View {
                         cardHeader("预览", subtitle: "当前色板在真实组件上的效果。")
 
                         HStack(spacing: 14) {
-                            LiteParseMark(size: 44)
+                            JParseMark(size: 44)
 
                             VStack(alignment: .leading, spacing: 4) {
                                 Text("文献，即刻重构。")
@@ -355,10 +355,10 @@ public struct SettingsView: View {
         VStack(spacing: 14) {
             Spacer(minLength: 10)
 
-            LiteParseMark(size: 64)
+            JParseMark(size: 64)
 
             VStack(spacing: 4) {
-                Text("LiteParse Studio")
+                Text("JParse")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundStyle(LightTheme.textPrimary)
 
