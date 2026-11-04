@@ -13,6 +13,7 @@ credentials*
 logs/
 dist/
 build/
+release/
 .reasonix/
 .agents/
 .freebuff/
