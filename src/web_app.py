@@ -986,16 +986,21 @@ INDEX_HTML = """<!DOCTYPE html>
 
 
 def reveal_in_finder(directory: Path) -> bool:
-    """Open a directory in Finder only when it really exists.
+    """Open a directory in file manager (Finder / Explorer / xdg-open) only when it really exists.
 
     Module-level on purpose: tests patch this, because calling the real `open`
-    on a throw-away TemporaryDirectory pops Finder windows on every test run.
+    on a throw-away TemporaryDirectory pops file manager windows on every test run.
     """
     target = Path(directory)
     if not target.is_dir():
         return False
     try:
-        subprocess.run(["open", str(target)], check=False)
+        if sys.platform == "win32":
+            os.startfile(str(target))
+        elif sys.platform == "darwin":
+            subprocess.run(["open", str(target)], check=False)
+        else:
+            subprocess.run(["xdg-open", str(target)], check=False)
     except OSError:
         return False
     return True
@@ -1311,9 +1316,16 @@ def run_server(port: int = 8765, open_browser: bool = True):
 
     if open_browser:
         try:
-            subprocess.run(["open", url])
+            import webbrowser
+            webbrowser.open(url)
         except Exception:
-            pass
+            try:
+                if sys.platform == "darwin":
+                    subprocess.run(["open", url], check=False)
+                elif sys.platform == "win32":
+                    os.startfile(url)
+            except Exception:
+                pass
 
     try:
         httpd.serve_forever()

@@ -151,7 +151,19 @@ def patch_pdf2zh_translator_file(venv_dir: Optional[Path] = None) -> bool:
     venv_dir = Path(venv_dir)
 
     # Locate translator.py
-    candidate_paths = list(venv_dir.glob("lib/python*/site-packages/pdf2zh/translator.py"))
+    candidate_paths = (
+        list(venv_dir.glob("lib/python*/site-packages/pdf2zh/translator.py")) +
+        list(venv_dir.glob("Lib/site-packages/pdf2zh/translator.py")) +
+        list(venv_dir.glob("site-packages/pdf2zh/translator.py"))
+    )
+    if not candidate_paths:
+        try:
+            import pdf2zh.translator as tr_mod
+            if tr_mod.__file__ and Path(tr_mod.__file__).is_file():
+                candidate_paths = [Path(tr_mod.__file__)]
+        except Exception:
+            pass
+
     if not candidate_paths:
         logger.warning("未找到 %s 下的 translator.py", venv_dir)
         return False
@@ -303,7 +315,19 @@ def patch_pdf2zh_converter_file(venv_dir: Optional[Path] = None) -> bool:
         venv_dir = Path.home() / ".local/venvs/pdf2zh"
     venv_dir = Path(venv_dir)
 
-    candidate_paths = list(venv_dir.glob("lib/python*/site-packages/pdf2zh/converter.py"))
+    candidate_paths = (
+        list(venv_dir.glob("lib/python*/site-packages/pdf2zh/converter.py")) +
+        list(venv_dir.glob("Lib/site-packages/pdf2zh/converter.py")) +
+        list(venv_dir.glob("site-packages/pdf2zh/converter.py"))
+    )
+    if not candidate_paths:
+        try:
+            import pdf2zh.converter as conv_mod
+            if conv_mod.__file__ and Path(conv_mod.__file__).is_file():
+                candidate_paths = [Path(conv_mod.__file__)]
+        except Exception:
+            pass
+
     if not candidate_paths:
         logger.warning("未找到 %s 下的 converter.py", venv_dir)
         return False

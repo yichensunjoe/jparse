@@ -121,17 +121,28 @@ SCAN_PDF_ZH_CORRECTIONS: List[Tuple[str, str]] = [
 
 
 def find_chrome_binary() -> Optional[Path]:
-    """Locate Google Chrome or Chromium executable."""
+    """Locate Google Chrome, Chromium, or Microsoft Edge executable."""
     candidates = [
+        # macOS
         Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"),
         Path("/Applications/Chromium.app/Contents/MacOS/Chromium"),
+        Path("/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"),
+        # Windows
+        Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "Google/Chrome/Application/chrome.exe",
+        Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "Google/Chrome/Application/chrome.exe",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Google/Chrome/Application/chrome.exe",
+        Path(os.environ.get("PROGRAMFILES(X86)", "C:\\Program Files (x86)")) / "Microsoft/Edge/Application/msedge.exe",
+        Path(os.environ.get("PROGRAMFILES", "C:\\Program Files")) / "Microsoft/Edge/Application/msedge.exe",
+        # PATH
         Path(shutil.which("google-chrome") or ""),
         Path(shutil.which("chrome") or ""),
         Path(shutil.which("chromium") or ""),
+        Path(shutil.which("msedge") or ""),
     ]
     for c in candidates:
-        if c.is_file() and os.access(str(c), os.X_OK):
-            return c
+        if str(c) and c.is_file():
+            if sys.platform == "win32" or os.access(str(c), os.X_OK):
+                return c
     return None
 
 

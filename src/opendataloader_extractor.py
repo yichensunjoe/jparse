@@ -27,13 +27,31 @@ except ImportError:
 
 logger = logging.getLogger("opendataloader_extractor")
 
-# Potential Java locations on macOS / Apple Silicon
+# Potential Java locations on macOS / Linux / Windows
 _CANDIDATE_JAVA_DIRS = [
     Path("/Users/joe/.local/bin"),
     Path("/opt/homebrew/opt/openjdk/bin"),
     Path("/opt/homebrew/bin"),
     Path("/usr/local/bin"),
 ]
+
+if "JAVA_HOME" in os.environ:
+    _CANDIDATE_JAVA_DIRS.insert(0, Path(os.environ["JAVA_HOME"]) / "bin")
+
+if sys.platform == "win32":
+    for env_var in ("PROGRAMFILES", "PROGRAMFILES(X86)"):
+        pf = os.environ.get(env_var)
+        if pf:
+            prog_files = Path(pf)
+            for base in (prog_files / "Java", prog_files / "Eclipse Adoptium", prog_files / "Microsoft"):
+                if base.is_dir():
+                    try:
+                        for jdk_dir in base.iterdir():
+                            bin_dir = jdk_dir / "bin"
+                            if bin_dir.is_dir():
+                                _CANDIDATE_JAVA_DIRS.append(bin_dir)
+                    except Exception:
+                        pass
 
 
 def ensure_java_environment() -> Optional[str]:
@@ -56,9 +74,10 @@ def ensure_java_environment() -> Optional[str]:
             pass
 
     # Search candidate paths
+    exe_name = "java.exe" if sys.platform == "win32" else "java"
     for cand_dir in _CANDIDATE_JAVA_DIRS:
-        java_bin = cand_dir / "java"
-        if java_bin.is_file() and os.access(str(java_bin), os.X_OK):
+        java_bin = cand_dir / exe_name
+        if java_bin.is_file() and (sys.platform == "win32" or os.access(str(java_bin), os.X_OK)):
             try:
                 res = subprocess.run(
                     [str(java_bin), "-version"],

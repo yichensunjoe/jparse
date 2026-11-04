@@ -22,15 +22,27 @@ BOOT_ERROR_LOG = LOGS / "watcher-startup.error.log"
 def process_matches(pid):
     try:
         os.kill(pid, 0)
-    except (OSError, ProcessLookupError):
+    except (OSError, ProcessLookupError, AttributeError):
         return False
-    result = subprocess.run(
-        ["/bin/ps", "-p", str(pid), "-o", "command="],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
-        text=True,
-    )
-    return result.returncode == 0 and str(WATCHER) in result.stdout
+    if sys.platform == "win32":
+        try:
+            result = subprocess.run(
+                ["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+            )
+            return str(pid) in result.stdout
+        except Exception:
+            return True
+    else:
+        result = subprocess.run(
+            ["/bin/ps", "-p", str(pid), "-o", "command="],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+        )
+        return result.returncode == 0 and str(WATCHER) in result.stdout
 
 
 def current_pid():
@@ -65,6 +77,12 @@ def start():
         return
 
     check_message = check_environment()
+    start_new_session = True
+    creationflags = 0
+    if sys.platform == "win32":
+        start_new_session = False
+        creationflags = subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP
+
     with BOOT_ERROR_LOG.open("w", encoding="utf-8") as error_handle:
         process = subprocess.Popen(
             [sys.executable, str(WATCHER), "--config", str(CONFIG)],
@@ -72,8 +90,9 @@ def start():
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=error_handle,
-            start_new_session=True,
-            close_fds=True,
+            start_new_session=start_new_session,
+            creationflags=creationflags,
+            close_fds=(sys.platform != "win32"),
         )
     PID_FILE.write_text(str(process.pid), encoding="utf-8")
     time.sleep(1)
@@ -93,12 +112,19 @@ def stop():
     if not pid:
         print("自动识别当前未运行。")
         return
-    os.kill(pid, signal.SIGTERM)
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except Exception:
+        pass
     deadline = time.monotonic() + 8
     while time.monotonic() < deadline and process_matches(pid):
         time.sleep(0.2)
     if process_matches(pid):
-        os.kill(pid, signal.SIGKILL)
+        kill_sig = getattr(signal, "SIGKILL", signal.SIGTERM)
+        try:
+            os.kill(pid, kill_sig)
+        except Exception:
+            pass
     PID_FILE.unlink(missing_ok=True)
     print("自动识别已停止。")
 
@@ -129,7 +155,12 @@ def status():
 def open_folder(name):
     folder = ROOT / name
     folder.mkdir(parents=True, exist_ok=True)
-    subprocess.run(["/usr/bin/open", str(folder)], check=True)
+    if sys.platform == "win32":
+        os.startfile(str(folder))
+    elif sys.platform == "darwin":
+        subprocess.run(["open", str(folder)], check=True)
+    else:
+        subprocess.run(["xdg-open", str(folder)], check=True)
 
 
 def parse_args():

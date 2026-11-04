@@ -2,14 +2,16 @@
 
 > 交接文档：每次开新会话先读本文件。更新规则见 `AGENTS.md`「HANDOFF 交接规则」。
 
-## 当前状态（2026-11-03）
+## 当前状态（2026-11-04）
 
-- **全栈重命名为 JParse（2026-11-03）**：已完成品牌升级。GitHub 远程私有仓库重命名为 `yichensunjoe/jparse`（`git remote` 同步更新）；macOS 原生桌面应用重构并打包为 `JParse.app`（2.4 MB，ad-hoc 签名，送入 `outbox/JParse.app`）；启动脚本命名为 `启动JParse桌面应用.command`；Web 工作台与文档全面更新为 JParse；本地项目目录严格保留 `P052-LiteParse-PDF自动识别` 不变。全量 293/293 单测全绿（22.4s）。
-- **位图图例原位翻译与重绘封装（2026-11-02）**：攻克学术论文内嵌位图（PNG/JPEG，如 Figure 1 流程图、Figure 2 神经网络结构）中英文未被翻译的缺陷。完成方案 B 落地并封装为 `src/bitmap_figure_translator.py`，无缝接入 `src/vector_pdf_renderer.py` 流水线。具备 PaddleOCR 1:1 坐标检测、多行聚合、数学变量（$x_1, x_2, y_1$ 等）免触碰门禁、容器边界底色采样、平滑擦除、思源黑体抗锯齿重绘与 PyMuPDF `replace_image(xref)` 原位无损替换。新增配套单测 `tests/test_bitmap_figure_translator.py`，全量 293/293 单测全绿。
+- **开源公开与 Windows 全套完整版交付（2026-11-04）**：GitHub 仓库已设置并验证为 PUBLIC 开放（`yichensunjoe/jparse`）；全面完成 Windows 深度跨平台兼容（`watcher` msvcrt 文件锁、`manage` 跨平台进程守护与安全信号、`web_app` 跨平台文件管理与浏览器唤起、Edge/Chrome 原生 Chromium 发现、Windows 虚拟环境路径适配）。新增 `src/desktop_app_windows.py` 提供独立无边框桌面视窗；提供 `启动JParse桌面应用(无黑框).vbs`（静默拉起，彻底无黑框干扰）与 9 个配套 `.bat` 批处理；编写详尽 `README_WINDOWS.md` 并更新 `README.md`。新增 Windows 专项测试，全量 305/305 单元测试全绿（24.9s）。
+- **全栈重命名为 JParse（2026-11-03）**：已完成品牌升级。GitHub 远程仓库重命名为 `yichensunjoe/jparse`（`git remote` 同步更新）；macOS 原生桌面应用重构并打包为 `JParse.app`（2.4 MB，ad-hoc 签名，送入 `outbox/JParse.app`）；启动脚本命名为 `启动JParse桌面应用.command`；Web 工作台与文档全面更新为 JParse；本地项目目录严格保留 `P052-LiteParse-PDF自动识别` 不变。
+- **位图图例原位翻译与重绘封装（2026-11-02）**：攻克学术论文内嵌位图（PNG/JPEG，如 Figure 1 流程图、Figure 2 神经网络结构）中英文未被翻译的缺陷。完成方案 B 落地并封装为 `src/bitmap_figure_translator.py`，无缝接入 `src/vector_pdf_renderer.py` 流水线。具备 PaddleOCR 1:1 坐标检测、多行聚合、数学变量（$x_1, x_2, y_1$ 等）免触碰门禁、容器边界底色采样、平滑擦除、思源黑体抗锯齿重绘与 PyMuPDF `replace_image(xref)` 原位无损替换。新增配套单测 `tests/test_bitmap_figure_translator.py`。
 - **模式收口与极简降噪（2026-11-02）**：彻底隐藏界面模式切换入口，所有任务默认走“智能双轨”自动路由；移除投递卡片上的翻译选择与隐私说明，投递区彻底回到纯净无干扰状态（翻译引擎保留在设置窗口 ⌘,）。顶栏仅留品牌与右侧状态操作；Web 工作台路由下拉替换为隐藏域。
-- **下一步**：双击 `启动JParse桌面应用.command` 或打开 `outbox/JParse.app` 直接使用。
+- **下一步**：推送代码至 GitHub 公开仓库，跨 macOS / Windows 双系统日常使用。
 
 ## 近期轮次（最新在上，保留全部）
+- 2026-11-04（仓库开源公开与 Windows 完整版交付）：将 GitHub 仓库 yichensunjoe/jparse 切换为 PUBLIC 公开；完成底层跨平台治理（fcntl/msvcrt 文件锁、win32 进程/信号/路径处理、Edge/Chrome 打印探测、venv 兼容）；实现 Windows 桌面视窗（src/desktop_app_windows.py）与无黑框静默启动器（.vbs）及全套 .bat 脚本；交付 README_WINDOWS.md，新增 Windows 专项测试，全量 305/305 单测全绿。下一步：推送代码至远端 main。
 - 2026-11-03（全栈重命名为 JParse）：根据用户要求将项目整体命名为 JParse，覆盖 GitHub 远程私有仓库（yichensunjoe/jparse）、macOS 桌面端（JParse.app）、Web 交互工作台（JParse 交互式工作台）、文档及桌面启动脚本（启动JParse桌面应用.command），严格保留本地项目文件夹路径不变。清理旧应用并重新编译打包 JParse.app（2.4M，零警告），全量 293/293 单元测试全绿，代码已提交并推送到远端 main 分支。下一步：双击启动脚本或 JParse.app 即可使用。
 - 2026-11-02（位图图例原位翻译模块化封装与合入）：用户反馈学术论文中位图流程图/结构图未翻译，完成方案 B（PaddleOCR 1:1 检测 + 领域分词聚合 + 变量保护 + 底色采样平滑擦除 + 思源黑体抗锯齿重绘 + PyMuPDF replace_image 原位替换）。封装为 src/bitmap_figure_translator.py 并接入 vector_pdf_renderer 流水线；新增 tests/test_bitmap_figure_translator.py，293/293 单测全绿通过；macOS 客户端重编译 2.4M 签名就绪。
 - 2026-11-02（模式收口与极简降噪：隐藏模式与投递区翻译选项）：按用户要求完全隐藏模式切换入口，避免用户产生模式选择与区别的疑惑，默认锁死智能双轨。移除投递卡片上的“新任务翻译 [ Bing | Google ]”与隐私声明，投递区彻底回到纯白极简状态（翻译服务移入偏好设置 ⌘,）。顶栏移除模式控件，Web UI 路由下拉替换为隐藏域。重打包桌面 App（2.4M，零警告），实机运行并截图验收，287/287 单测全绿（23.88s），Tier3/Tier4 回归通过。

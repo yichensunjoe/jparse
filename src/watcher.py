@@ -2,7 +2,15 @@
 """Watch a project-local inbox and parse stable PDFs with LiteParse."""
 
 import argparse
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
 import hashlib
 import json
 import logging
@@ -1160,16 +1168,42 @@ class Watcher:
 
 def acquire_lock(lock_path: Path):
     handle = lock_path.open("a+")
-    try:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except BlockingIOError:
-        handle.close()
-        return None
+    if fcntl:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except (BlockingIOError, OSError):
+            handle.close()
+            return None
+    elif msvcrt:
+        try:
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        except OSError:
+            handle.close()
+            return None
     handle.seek(0)
     handle.truncate()
     handle.write(str(os.getpid()))
     handle.flush()
     return handle
+
+
+def release_lock(lock_handle):
+    if lock_handle is None:
+        return
+    try:
+        if fcntl:
+            fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
+        elif msvcrt:
+            lock_handle.seek(0)
+            msvcrt.locking(lock_handle.fileno(), msvcrt.LK_UNLCK, 1)
+    except Exception:
+        pass
+    finally:
+        try:
+            lock_handle.close()
+        except Exception:
+            pass
 
 
 def parse_args():
@@ -1213,8 +1247,7 @@ def main() -> int:
         else:
             watcher.run_forever()
     finally:
-        fcntl.flock(lock_handle.fileno(), fcntl.LOCK_UN)
-        lock_handle.close()
+        release_lock(lock_handle)
     return 0
 
 

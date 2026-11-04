@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 from typing import List, Optional
 
@@ -13,14 +14,19 @@ logger = logging.getLogger("vector_pdf_renderer")
 
 def get_pdf2zh_binary() -> Path:
     """Locate the isolated pdf2zh executable."""
+    exe_name = "pdf2zh.exe" if sys.platform == "win32" else "pdf2zh"
     candidates = [
-        Path.home() / ".local/venvs/pdf2zh/bin/pdf2zh",
+        Path.home() / f".local/venvs/pdf2zh/bin/{exe_name}",
+        Path.home() / f".local/venvs/pdf2zh/Scripts/{exe_name}",
+        Path(sys.prefix) / f"Scripts/{exe_name}",
+        Path(sys.prefix) / f"bin/{exe_name}",
         Path("/Users/joe/.local/venvs/pdf2zh/bin/pdf2zh"),
-        Path(shutil.which("pdf2zh") or ""),
+        Path(shutil.which("pdf2zh") or shutil.which("pdf2zh.exe") or ""),
     ]
     for c in candidates:
-        if c.exists() and os.access(c, os.X_OK):
-            return c
+        if str(c) and c.is_file():
+            if sys.platform == "win32" or os.access(c, os.X_OK):
+                return c
     raise FileNotFoundError("未找到可执行的 pdf2zh 虚拟环境二进制文件 (请确认 ~/.local/venvs/pdf2zh 存在)")
 
 

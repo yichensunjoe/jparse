@@ -4,6 +4,27 @@
 
 规则：执行任务前先读本文件；任务完成后**双写**——先追加本文件，再同步追加总库（见 AGENTS.md）。
 
+## 2026-11-04 · 仓库开放开源与跨平台 Windows 全套客户端完整支持（P052-LiteParse-PDF自动识别）
+
+- 场景：用户要求将 GitHub 仓库设为开放（PUBLIC），并完整新增 Windows 版本，使 Windows 用户可开箱即用 JParse 桌面端、交互工作台与后台自动化服务。
+- 做法：
+  ① 仓库公开：执行 `gh repo edit yichensunjoe/jparse --visibility public --accept-visibility-change-consequences` 成功变更为公开仓库；
+  ② 底层跨平台兼容治理：
+     - `src/watcher.py`：使用 `try import fcntl / msvcrt` 解除 Windows 下缺失 fcntl 导致的致命 `ModuleNotFoundError`，实现 Windows 下 `msvcrt.locking` 非阻塞文件锁与安全释放；
+     - `src/manage.py`：重构 `process_matches`、`start`（Windows 使用 `DETACHED_PROCESS`）、`stop`（安全兼容 win32 信号）与 `open_folder`（`os.startfile`）；
+     - `src/web_app.py`：`reveal_in_finder` 升级为跨平台资源管理器唤起（Windows 下 `os.startfile`），浏览器唤起统一使用 `webbrowser.open`；
+     - `src/hd_scan_renderer.py`：扩展 Chromium 定位逻辑，自动识别 Windows 10/11 内置的 Microsoft Edge（`msedge.exe`）及 Chrome，实现免装额外浏览器的开箱即用无头打印；
+     - `src/vector_pdf_renderer.py` / `src/pdf2zh_patch.py`：适配 Windows 虚拟环境 `Scripts\*.exe` 与 `Lib/site-packages` 目录结构；
+  ③ 原生独立桌面视窗与无黑框静默体验：
+     - 新增 `src/desktop_app_windows.py`，启动本地后台并自动调用 Chromium `--app=http://127.0.0.1:8765` 呈现独立无地址栏、无标签页的 PWA 级桌面视窗；
+     - 编写 `启动JParse桌面应用(无黑框).vbs`，通过 VBScript 彻底隐藏 CMD 控制台窗口，双击即可无缝呈现干净桌面视窗；
+     - 交付完整配套脚本：`一键安装环境-Windows.bat`、`启动JParse桌面应用.bat`、`打开交互应用.bat`、`启动自动识别.bat`、`停止自动识别.bat`、`查看运行状态.bat`、`打开PDF投递箱.bat`、`打开识别结果.bat`、`翻译已识别文献.bat`；
+  ④ 编写专门的 `README_WINDOWS.md` 详尽指南并升级 `README.md`，新增 `tests/test_windows_support.py` 自动化测试。
+- 踩坑点：
+  - Python 3.12 在 macOS 上若用 `unittest.mock` 粗暴 mock `sys.platform = "win32"`，`shutil.which` 内部会调用未导出的 `_winapi.NeedCurrentDirectoryForExePath` 报错 `AttributeError`；测试中应显式 mock `shutil.which` 返回值。
+- 验证：全量 305/305 单元测试全绿通过（24.9s），Windows 批处理语法与路径完整通过测试。
+- 适用场景：基于 Web/Python 核心的学术排版工具向 Windows 平台平滑移植与桌面化交付。
+
 ## 2026-11-03 · 全栈重构与品牌统一命名：从 LiteParse 到 JParse（P052-LiteParse-PDF自动识别）
 
 - 场景：用户要求将整体项目命名为 **JParse**，覆盖 GitHub 远程私有仓库（`yichensunjoe/jparse`）、macOS 原生桌面应用（`JParse.app` / `JParse Studio`）、Web 工作台与可双击启动脚本，同时严格遵照“保留本地项目目录名 `P052-LiteParse-PDF自动识别` 不变”的约束。

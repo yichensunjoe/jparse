@@ -109,12 +109,14 @@ class TextGroup:
 
 def locate_paddleocr_python() -> Optional[Path]:
     """Locate the Python executable that has paddleocr installed."""
+    py_name = "python.exe" if sys.platform == "win32" else "python"
     candidates = [
-        Path.home() / ".local/venvs/paddleocr/bin/python",
+        Path.home() / f".local/venvs/paddleocr/bin/{py_name}",
+        Path.home() / f".local/venvs/paddleocr/Scripts/{py_name}",
         Path("/Users/joe/.local/venvs/paddleocr/bin/python"),
     ]
     for c in candidates:
-        if c.is_file() and os.access(c, os.X_OK):
+        if c.is_file() and (sys.platform == "win32" or os.access(c, os.X_OK)):
             return c
 
     # Check if current python has it

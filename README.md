@@ -2,8 +2,10 @@
 
 ## Purpose
 
-基于确定性本地算法与学术级排版引擎，实现一个 macOS 本地桌面与后台自动化中枢 **JParse**：
-将 PDF 放入 `inbox/` 或直接拖入桌面端 `JParse.app`，自动识别文档类型（现代矢量文献 / 扫描书籍），并在 `outbox/` 交付出版级单语精译版与双语对照版 PDF，同时保留排好版的 HTML 与便于 Agent 分析的纯净 Markdown。全程不调用大模型，原始 PDF 永不上传。
+基于确定性本地算法与学术级排版引擎，实现跨 macOS 与 Windows 双系统的本地桌面与后台自动化中枢 **JParse**：
+将 PDF 放入 `inbox/` 或直接拖入桌面端视窗，自动识别文档类型（现代矢量文献 / 扫描书籍），并在 `outbox/` 交付出版级单语精译版与双语对照版 PDF，同时保留排好版的 HTML 与便于 Agent 分析的纯净 Markdown。全程不调用大模型，原始 PDF 永不上传。
+
+> 🪟 **Windows 用户专用指南**：请查阅 [`README_WINDOWS.md`](README_WINDOWS.md)，提供一键安装向导与独立无黑框桌面客户端。
 
 ## 范围
 
@@ -57,6 +59,7 @@
 
 ## 可双击的入口
 
+### macOS 用户入口
 - [`启动JParse桌面应用.command`](启动JParse桌面应用.command)：启动 macOS 原生 JParse 桌面端 Studio
 - [`打开交互应用.command`](打开交互应用.command)：启动本地 Web 交互式工作台（带批量拖拽与实时预览）
 - [`打开PDF投递箱.command`](打开PDF投递箱.command)
@@ -65,7 +68,15 @@
 - [`启动自动识别.command`](启动自动识别.command)
 - [`停止自动识别.command`](停止自动识别.command)
 
-当前后台进程会持续运行。重启 Mac 或退出登录后，双击“启动自动识别”即可恢复。
+### Windows 用户入口（详见 [Windows 指南](README_WINDOWS.md)）
+- [`一键安装环境-Windows.bat`](一键安装环境-Windows.bat)：自动创建虚拟环境并安装核心排版依赖
+- [`启动JParse桌面应用(无黑框).vbs`](启动JParse桌面应用(无黑框).vbs)：以原生纯净桌面视窗无黑框静默拉起 JParse Studio（**日常推荐**）
+- [`启动JParse桌面应用.bat`](启动JParse桌面应用.bat)：以独立桌面应用模式启动 JParse Studio（保留控制台日志）
+- [`打开交互应用.bat`](打开交互应用.bat)：在系统默认浏览器打开 Web 交互工作台
+- [`打开PDF投递箱.bat`](打开PDF投递箱.bat) / [`打开识别结果.bat`](打开识别结果.bat)
+- [`启动自动识别.bat`](启动自动识别.bat) / [`停止自动识别.bat`](停止自动识别.bat) / [`查看运行状态.bat`](查看运行状态.bat)
+
+当前后台进程会持续运行。重启电脑或退出登录后，双击“启动自动识别”即可恢复。
 
 ## Commands
 
