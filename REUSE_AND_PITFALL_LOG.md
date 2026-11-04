@@ -4,6 +4,17 @@
 
 规则：执行任务前先读本文件；任务完成后**双写**——先追加本文件，再同步追加总库（见 AGENTS.md）。
 
+## 2026-11-04 · 自动化发布打包与 GitHub Release 资产分发（P052-LiteParse-PDF自动识别）
+
+- 场景：用户询问 Windows 安装包具体位置，需要开箱即用的独立发布归档与在线下载地址。
+- 做法：
+  ① 编写 `scripts/package_release.py`，自动清洗临时文件并打包 `JParse-Windows-v2.1.0.zip`（9.49 MB）与 `JParse-macOS-v2.1.0.zip`（0.83 MB）；
+  ② 包内预置 `使用说明-先看我.txt`（UTF-8-SIG 带 BOM 保证 Windows 记事本默认打开无乱码），包含完整源码、批处理启动器、静默启动器与空目录脚手架；
+  ③ 本地将安装包同时同步至 `release/` 与交付目录 `outbox/`，并在 `.gitignore` 中加入 release 规则避免 git 膨胀；
+  ④ 借助 GitHub CLI `gh release create v2.1.0` 将 zip 安装包正式发布到公开 Release 页面，形成“本地解压即用 + 远端公开直链下载”的双通道分发。
+- 验证：GitHub Release 成功上线（tag `v2.1.0`），包含 Windows 与 macOS 两个独立资产包，下载校验哈希与本地一致。
+- 适用场景：开源软件在交付时，既为开发者提供 git 源码与批处理，又为普通用户提供直观的 Releases 单包 zip 下载。
+
 ## 2026-11-04 · 仓库开放开源与跨平台 Windows 全套客户端完整支持（P052-LiteParse-PDF自动识别）
 
 - 场景：用户要求将 GitHub 仓库设为开放（PUBLIC），并完整新增 Windows 版本，使 Windows 用户可开箱即用 JParse 桌面端、交互工作台与后台自动化服务。
