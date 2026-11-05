@@ -40,18 +40,37 @@ def main() -> None:
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     python_dir = RUNTIME / "python"
     python_dir.mkdir()
+    ocr_python_dir = RUNTIME / "ocr-python"
+    ocr_python_dir.mkdir()
     python_zip = BUILD / "python-embed.zip"
     url = f"https://www.python.org/ftp/python/{PYTHON_VERSION}/python-{PYTHON_VERSION}-embed-amd64.zip"
     print("Downloading", url, flush=True)
     urllib.request.urlretrieve(url, python_zip)
     with zipfile.ZipFile(python_zip) as archive:
         archive.extractall(python_dir)
-    (python_dir / "python312._pth").write_text(
-        "python312.zip\n.\nLib\\site-packages\nimport site\n", encoding="ascii"
-    )
+        archive.extractall(ocr_python_dir)
+    # The Python embeddable ZIP includes vcruntime140*.dll but not the C++
+    # standard library required by native wheels such as ONNX Runtime.
+    # Include the installed Microsoft redistributable DLLs app-locally, so a
+    # clean Windows machine need not install the VC++ redistributable itself.
+    system32 = Path(os.environ["WINDIR"]) / "System32"
+    msvc = list(system32.glob("msvcp140*.dll"))
+    if not msvc:
+        raise SystemExit("Microsoft VC++ runtime DLLs are unavailable on the build machine.")
+    for dll in msvc + [system32 / "concrt140.dll", system32 / "vcomp140.dll"]:
+        if dll.is_file():
+            shutil.copy2(dll, python_dir / dll.name)
+            shutil.copy2(dll, ocr_python_dir / dll.name)
+    for interpreter in (python_dir, ocr_python_dir):
+        (interpreter / "python312._pth").write_text(
+            "python312.zip\n.\nLib\\site-packages\nimport site\n", encoding="ascii"
+        )
     site_packages = python_dir / "Lib" / "site-packages"
     run(sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--no-compile",
         "--target", str(site_packages), "-r", str(ROOT / "scripts" / "requirements-windows.txt"))
+    run(sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--no-compile",
+        "--target", str(ocr_python_dir / "Lib" / "site-packages"),
+        "-r", str(ROOT / "scripts" / "requirements-windows-ocr.txt"))
     project = RUNTIME / "project"
     project.mkdir()
     shutil.copytree(ROOT / "src", project / "src", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
@@ -72,6 +91,16 @@ def main() -> None:
         encoding="utf-8",
     )
     run(str(python_dir / "python.exe"), str(helper), str(RUNTIME / "models"))
+
+    # Resolve the exact OCR models used by bitmap_figure_translator at build
+    # time. No end-user image or PDF is sent to these model hosts.
+    ocr_env = os.environ.copy()
+    ocr_env["PADDLE_PDX_CACHE_HOME"] = str(RUNTIME / "ocr-models")
+    ocr_env["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True"
+    run(str(ocr_python_dir / "python.exe"), "-c",
+        "from paddleocr import PaddleOCR; "
+        "PaddleOCR(use_doc_orientation_classify=False, use_doc_unwarping=False, "
+        "use_textline_orientation=False, lang='en')", env=ocr_env)
 
     payload = BUILD / "runtime.zip"
     with zipfile.ZipFile(payload, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=5, allowZip64=True) as archive:

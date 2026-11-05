@@ -1019,6 +1019,12 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
     task_manager: ConversionTaskManager = None
     max_upload_bytes = 1024 * 1024 * 1024  # 1 GB
 
+    def log_message(self, format, *args):
+        # pythonw.exe has no stderr. The default HTTP handler writes to it
+        # before sending a response and otherwise drops every connection.
+        message = (format % args).translate(self._control_char_table)
+        logger.info("%s - %s", self.address_string(), message)
+
     def _allowed_origins(self):
         port = self.server.server_address[1]
         return {

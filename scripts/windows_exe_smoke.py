@@ -13,6 +13,9 @@ from urllib.request import Request, urlopen
 
 import fitz
 
+if sys.platform == "win32":
+    assert Path(sys.executable).with_name("msvcp140.dll").is_file(), "Bundled VC++ runtime is missing"
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--project", type=Path, required=True)
 parser.add_argument("--port", type=int, default=18765)
@@ -24,6 +27,30 @@ from src.opendataloader_extractor import extract_pdf_structure
 root = Path(os.environ["JPARSE_DATA_DIR"])
 inbox = root / "inbox"
 inbox.mkdir(parents=True, exist_ok=True)
+
+if os.environ.get("JPARSE_PADDLE_PYTHON"):
+    from PIL import Image, ImageDraw, ImageFont
+    from src.bitmap_figure_translator import run_paddle_ocr
+
+    image = Image.new("RGB", (950, 150), "white")
+    font_path = Path(os.environ["WINDIR"]) / "Fonts" / "arial.ttf"
+    ImageDraw.Draw(image).text((30, 35), "REACTOR COOLING VALVE", fill="black",
+                               font=ImageFont.truetype(str(font_path), 48))
+    image_path = root / "jparse-ocr-smoke.png"
+    image.save(image_path)
+    previous_offline = os.environ.get("HF_HUB_OFFLINE")
+    os.environ["HF_HUB_OFFLINE"] = "1"
+    try:
+        words = " ".join(item.text for item in run_paddle_ocr(image_path)).upper()
+        assert "REACTOR" in words, f"Bundled offline OCR failed: {words}"
+    finally:
+        image_path.unlink(missing_ok=True)
+        if previous_offline is None:
+            os.environ.pop("HF_HUB_OFFLINE", None)
+        else:
+            os.environ["HF_HUB_OFFLINE"] = previous_offline
+    print("Bundled offline bitmap OCR passed", flush=True)
+
 pdf = inbox / "jparse-smoke.pdf"
 doc = fitz.open()
 page = doc.new_page()

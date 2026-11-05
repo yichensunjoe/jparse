@@ -112,6 +112,9 @@ internal static class JParseLauncher
         start.CreateNoWindow = true;
         start.EnvironmentVariables["JPARSE_DATA_DIR"] = data;
         start.EnvironmentVariables["JPARSE_BUNDLED_PYTHON"] = Path.Combine(pythonDir, "python.exe");
+        start.EnvironmentVariables["JPARSE_PADDLE_PYTHON"] = Path.Combine(runtime, "ocr-python", "python.exe");
+        start.EnvironmentVariables["PADDLE_PDX_CACHE_HOME"] = Path.Combine(runtime, "ocr-models");
+        start.EnvironmentVariables["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "True";
         start.EnvironmentVariables["JPARSE_LAYOUT_MODEL"] = Path.Combine(runtime, "models", "layout.onnx");
         start.EnvironmentVariables["JPARSE_FONT_DIR"] = Path.Combine(runtime, "models");
         start.EnvironmentVariables["NOTO_FONT_PATH"] = Path.Combine(runtime, "models", "SourceHanSerifCN-Regular.ttf");
@@ -126,6 +129,8 @@ internal static class JParseLauncher
         return File.Exists(Path.Combine(dir, ".complete")) &&
             File.Exists(Path.Combine(dir, "python", "python.exe")) &&
             File.Exists(Path.Combine(dir, "python", "pythonw.exe")) &&
+            File.Exists(Path.Combine(dir, "ocr-python", "python.exe")) &&
+            Directory.Exists(Path.Combine(dir, "ocr-models", "official_models")) &&
             File.Exists(Path.Combine(dir, "project", "src", "desktop_app_windows.py")) &&
             File.Exists(Path.Combine(dir, "jre", "bin", "java.exe")) &&
             File.Exists(Path.Combine(dir, "models", "layout.onnx")) &&

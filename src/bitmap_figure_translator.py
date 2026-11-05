@@ -110,6 +110,12 @@ class TextGroup:
 
 def locate_paddleocr_python() -> Optional[Path]:
     """Locate the Python executable that has paddleocr installed."""
+    bundled = os.environ.get("JPARSE_PADDLE_PYTHON")
+    if bundled:
+        candidate = Path(bundled)
+        if not candidate.is_file():
+            raise FileNotFoundError("JParse 内置 OCR 运行环境不存在: %s" % candidate)
+        return candidate
     py_name = "python.exe" if sys.platform == "win32" else "python"
     candidates = [
         Path.home() / f".local/venvs/paddleocr/bin/{py_name}",
@@ -149,11 +155,14 @@ print('__JSON_START__' + json.dumps(out))
 """
     try:
         res = subprocess.run(
-            [str(py_bin), "-c", worker_code, str(image_path)],
+            [str(py_bin), "-X", "utf8", "-c", worker_code, str(image_path)],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            timeout=60,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0,
         )
         if res.returncode != 0:
             logger.warning("PaddleOCR 执行返回非零码: %s", res.stderr[:200])

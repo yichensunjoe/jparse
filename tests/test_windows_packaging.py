@@ -5,8 +5,10 @@ from contextlib import ExitStack
 from pathlib import Path
 import sys
 import tempfile
+import threading
 import unittest
 from unittest.mock import MagicMock, patch
+from urllib.request import urlopen
 
 from src import desktop_app_windows, vector_pdf_renderer, web_app
 
@@ -51,6 +53,15 @@ class PortableRuntimeTests(unittest.TestCase):
                 command = vector_pdf_renderer.get_pdf2zh_command()
             self.assertEqual(command[-2:], ["--onnx", str(model)])
 
+    def test_bitmap_ocr_uses_bundled_python(self):
+        from src.bitmap_figure_translator import locate_paddleocr_python
+
+        with tempfile.TemporaryDirectory() as tmp:
+            python = Path(tmp) / "python.exe"
+            python.touch()
+            with patch.dict(os.environ, {"JPARSE_PADDLE_PYTHON": str(python)}):
+                self.assertEqual(locate_paddleocr_python(), python)
+
     def test_server_start_failure_does_not_open_browser(self):
         with patch.object(desktop_app_windows, "is_backend_alive", return_value=False), \
              patch.object(desktop_app_windows, "start_backend_server", side_effect=RuntimeError("failed")), \
@@ -93,6 +104,24 @@ class PortableRuntimeTests(unittest.TestCase):
              patch.object(desktop_app_windows, "is_backend_alive", return_value=False):
             with self.assertRaises(RuntimeError):
                 desktop_app_windows.start_backend_server()
+
+    def test_http_requests_work_without_a_console_stderr(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            manager = web_app.ConversionTaskManager(Path(tmp))
+            previous = web_app.LiteParseAppHandler.task_manager
+            web_app.LiteParseAppHandler.task_manager = manager
+            server = web_app.ThreadingHTTPServer(("127.0.0.1", 0), web_app.LiteParseAppHandler)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            try:
+                with patch.object(sys, "stderr", None):
+                    with urlopen("http://127.0.0.1:%d/api/tasks" % server.server_port, timeout=3) as response:
+                        self.assertEqual(response.status, 200)
+            finally:
+                server.shutdown()
+                server.server_close()
+                thread.join()
+                web_app.LiteParseAppHandler.task_manager = previous
 
 
 if __name__ == "__main__":

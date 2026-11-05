@@ -8,6 +8,7 @@ requiring heavy runtimes.
 
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
 import shutil
@@ -153,11 +154,20 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    data_dir = os.environ.get("JPARSE_DATA_DIR")
+    if data_dir:
+        log_dir = Path(data_dir) / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_handler = RotatingFileHandler(
+            log_dir / "desktop-launcher.log", maxBytes=1048576, backupCount=3, encoding="utf-8"
+        )
+        log_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+        logging.getLogger().addHandler(log_handler)
     try:
         main()
     except Exception as exc:
         logger.exception("JParse 启动失败")
-        if sys.platform == "win32":
+        if sys.platform == "win32" and "--server-only" not in sys.argv:
             import ctypes
             ctypes.windll.user32.MessageBoxW(None, str(exc), "JParse 启动失败", 0x10)
         raise

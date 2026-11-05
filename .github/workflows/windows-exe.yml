@@ -19,7 +19,9 @@ jobs:
         with:
           python-version: '3.12.10'
           cache: pip
-          cache-dependency-path: scripts/requirements-windows.txt
+          cache-dependency-path: |
+            scripts/requirements-windows.txt
+            scripts/requirements-windows-ocr.txt
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -50,6 +52,9 @@ jobs:
           $env:JAVA_HOME = Join-Path $runtime.FullName 'jre'
           $env:PATH = "$(Join-Path $env:JAVA_HOME 'bin');$env:PATH"
           $env:JPARSE_BUNDLED_PYTHON = $python
+          $env:JPARSE_PADDLE_PYTHON = Join-Path $runtime.FullName 'ocr-python/python.exe'
+          $env:PADDLE_PDX_CACHE_HOME = Join-Path $runtime.FullName 'ocr-models'
+          $env:PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK = 'True'
           $env:JPARSE_LAYOUT_MODEL = Join-Path $runtime.FullName 'models/layout.onnx'
           $env:NOTO_FONT_PATH = Join-Path $runtime.FullName 'models/SourceHanSerifCN-Regular.ttf'
           $env:PYTHONUTF8 = '1'
