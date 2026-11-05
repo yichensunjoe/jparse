@@ -22,7 +22,7 @@ internal static class JParseLauncher
         if (headless)
         {
             try { PrepareAndStart(args); return 0; }
-            catch (Exception ex) { Console.Error.WriteLine(ex); return 1; }
+            catch (Exception ex) { RecordFailure(ex); Console.Error.WriteLine(ex); return 1; }
         }
 
         Application.EnableVisualStyles();
@@ -49,7 +49,14 @@ internal static class JParseLauncher
                 try { PrepareAndStart(args); }
                 catch (Exception ex) {
                     result = 1;
-                    MessageBox.Show("JParse 启动失败：\n" + ex.Message, "JParse", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    RecordFailure(ex);
+                    string stage = ex.Data["JParseStage"] as string;
+                    string detail = String.IsNullOrEmpty(stage) ? "" : "（" + stage + "）";
+                    string guidance = ex is UnauthorizedAccessException
+                        ? "\n请确认当前账户可以在本用户的 JParse 文件夹中创建和写入文件。"
+                        : "";
+                    MessageBox.Show("JParse 启动失败" + detail + "：\n" + ex.Message + guidance,
+                        "JParse", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
                 finally { if (!splash.IsDisposed) splash.BeginInvoke(new Action(splash.Close)); }
             });
@@ -82,9 +89,10 @@ internal static class JParseLauncher
                 throw new InvalidDataException("程序包头部无效。");
             string key = BitConverter.ToString(expectedHash).Replace("-", "").ToLowerInvariant();
             runtimeId = key;
-            string runtimes = Path.Combine(baseDir, "runtimes");
+            // Keep the runtime path short enough for Windows installations
+            // which still enforce the traditional MAX_PATH limit.
+            string runtimes = Path.Combine(baseDir, "r");
             Directory.CreateDirectory(runtimes);
-            runtime = Path.Combine(runtimes, key);
             using (Mutex gate = new Mutex(false, "Local\\JParse-" + key))
             {
                 bool acquired = false;
@@ -92,8 +100,11 @@ internal static class JParseLauncher
                     try { acquired = gate.WaitOne(TimeSpan.FromMinutes(10)); }
                     catch (AbandonedMutexException) { acquired = true; }
                     if (!acquired) throw new IOException("等待 JParse 初始化超时。");
-                    if (!RuntimeReady(runtime))
+                    runtime = FindReadyRuntime(runtimes, key);
+                    if (runtime == null) {
+                        runtime = Path.Combine(runtimes, key.Substring(0, 24) + "-" + Guid.NewGuid().ToString("N").Substring(0, 8));
                         ExtractRuntime(input, size, expectedHash, runtimes, runtime);
+                    }
                 }
                 finally { if (acquired) gate.ReleaseMutex(); }
             }
@@ -128,9 +139,21 @@ internal static class JParseLauncher
         if (Process.Start(start) == null) throw new IOException("无法启动内置 Python。");
     }
 
-    private static bool RuntimeReady(string dir)
+    private static string FindReadyRuntime(string parent, string key)
     {
-        return File.Exists(Path.Combine(dir, ".complete")) &&
+        string prefix = key.Substring(0, 24) + "-";
+        foreach (string candidate in Directory.GetDirectories(parent, prefix + "*")) {
+            try { if (RuntimeReady(candidate, key)) return candidate; }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+        return null;
+    }
+
+    private static bool RuntimeReady(string dir, string key)
+    {
+        string marker = Path.Combine(dir, ".complete");
+        return File.Exists(marker) && String.Equals(File.ReadAllText(marker).Trim(), key, StringComparison.OrdinalIgnoreCase) &&
             File.Exists(Path.Combine(dir, "python", "python.exe")) &&
             File.Exists(Path.Combine(dir, "python", "pythonw.exe")) &&
             File.Exists(Path.Combine(dir, "ocr-python", "python.exe")) &&
@@ -146,30 +169,34 @@ internal static class JParseLauncher
 
     private static void ExtractRuntime(FileStream input, long size, byte[] expectedHash, string parent, string destination)
     {
-        string temp = Path.Combine(parent, ".extract-" + Guid.NewGuid().ToString("N"));
-        string archivePath = temp + ".zip";
-        Directory.CreateDirectory(temp);
+        string stage = "创建运行目录";
+        bool created = false;
         try {
+            if (Directory.Exists(destination)) throw new IOException("运行目录已存在：" + destination);
+            Directory.CreateDirectory(destination);
+            created = true;
             input.Seek(-TrailerSize - size, SeekOrigin.End);
+            long payloadOffset = input.Position;
+            stage = "校验程序包";
             using (SHA256 sha = SHA256.Create())
-            using (FileStream output = File.Create(archivePath))
             {
                 byte[] buffer = new byte[1024 * 1024];
                 long remaining = size;
                 while (remaining > 0) {
                     int count = input.Read(buffer, 0, (int)Math.Min(buffer.Length, remaining));
                     if (count == 0) throw new EndOfStreamException("程序包已损坏。");
-                    output.Write(buffer, 0, count);
                     sha.TransformBlock(buffer, 0, count, buffer, 0);
                     remaining -= count;
                 }
                 sha.TransformFinalBlock(new byte[0], 0, 0);
                 if (!Equal(sha.Hash, expectedHash)) throw new InvalidDataException("程序包校验失败。");
             }
-            string prefix = Path.GetFullPath(temp).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-            using (ZipArchive zip = ZipFile.OpenRead(archivePath)) {
+            stage = "展开运行文件";
+            string prefix = Path.GetFullPath(destination).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+            using (Stream slice = new PayloadStream(input, payloadOffset, size))
+            using (ZipArchive zip = new ZipArchive(slice, ZipArchiveMode.Read, false)) {
                 foreach (ZipArchiveEntry entry in zip.Entries) {
-                    string target = Path.GetFullPath(Path.Combine(temp, entry.FullName.Replace('/', Path.DirectorySeparatorChar)));
+                    string target = Path.GetFullPath(Path.Combine(destination, entry.FullName.Replace('/', Path.DirectorySeparatorChar)));
                     if (!target.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidDataException("程序包含无效路径。");
                     if (String.IsNullOrEmpty(entry.Name)) { Directory.CreateDirectory(target); continue; }
@@ -177,15 +204,85 @@ internal static class JParseLauncher
                     entry.ExtractToFile(target);
                 }
             }
-            File.WriteAllText(Path.Combine(temp, ".complete"), "ok");
-            if (!RuntimeReady(temp)) throw new InvalidDataException("程序包缺少必要组件。");
-            if (Directory.Exists(destination)) Directory.Delete(destination, true);
-            Directory.Move(temp, destination);
+            stage = "确认运行环境";
+            string key = BitConverter.ToString(expectedHash).Replace("-", "").ToLowerInvariant();
+            File.WriteAllText(Path.Combine(destination, ".complete"), key);
+            if (!RuntimeReady(destination, key)) throw new InvalidDataException("程序包缺少必要组件。");
         }
-        finally {
-            if (File.Exists(archivePath)) File.Delete(archivePath);
-            if (Directory.Exists(temp)) Directory.Delete(temp, true);
+        catch (Exception ex) {
+            ex.Data["JParseStage"] = stage;
+            if (created) {
+                try { Directory.Delete(destination, true); }
+                catch (Exception cleanup) { ex.Data["JParseCleanupFailure"] = cleanup.Message; }
+            }
+            throw;
         }
+    }
+
+    private static void RecordFailure(Exception error)
+    {
+        try {
+            string root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "JParse", "data", "logs");
+            Directory.CreateDirectory(root);
+            string log = Path.Combine(root, "launcher-bootstrap.log");
+            string entry = DateTime.Now.ToString("s") + " 阶段=" + error.Data["JParseStage"] + " " + error +
+                " 清理=" + error.Data["JParseCleanupFailure"] + Environment.NewLine;
+            if (entry.Length > 8000) entry = entry.Substring(0, 8000) + Environment.NewLine;
+            const long limit = 1024 * 1024;
+            long existing = File.Exists(log) ? new FileInfo(log).Length : 0;
+            if (existing + Encoding.UTF8.GetByteCount(entry) > limit) {
+                string backup = log + ".1";
+                if (File.Exists(backup)) File.Delete(backup);
+                if (File.Exists(log)) File.Move(log, backup);
+            }
+            File.AppendAllText(log, entry, Encoding.UTF8);
+        } catch (Exception) { /* Reporting must never hide the startup error. */ }
+    }
+
+    // Expose only the appended ZIP to ZipArchive without copying an 800 MB
+    // temporary archive or requiring deletion rights to commit the runtime.
+    private sealed class PayloadStream : Stream
+    {
+        private readonly Stream source;
+        private readonly long start;
+        private readonly long length;
+        private long position;
+
+        internal PayloadStream(Stream source, long start, long length)
+        {
+            this.source = source;
+            this.start = start;
+            this.length = length;
+            Seek(0, SeekOrigin.Begin);
+        }
+
+        public override bool CanRead { get { return true; } }
+        public override bool CanSeek { get { return true; } }
+        public override bool CanWrite { get { return false; } }
+        public override long Length { get { return length; } }
+        public override long Position { get { return position; } set { Seek(value, SeekOrigin.Begin); } }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            int allowed = (int)Math.Min((long)count, length - position);
+            int read = source.Read(buffer, offset, allowed);
+            position += read;
+            return read;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            long next = origin == SeekOrigin.Begin ? offset :
+                origin == SeekOrigin.Current ? position + offset : length + offset;
+            if (next < 0 || next > length) throw new IOException("程序包读取位置无效。");
+            source.Seek(start + next, SeekOrigin.Begin);
+            position = next;
+            return position;
+        }
+
+        public override void Flush() { }
+        public override void SetLength(long value) { throw new NotSupportedException(); }
+        public override void Write(byte[] buffer, int offset, int count) { throw new NotSupportedException(); }
     }
 
     private static bool Equal(byte[] a, byte[] b)

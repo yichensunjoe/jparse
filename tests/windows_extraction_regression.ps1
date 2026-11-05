@@ -75,24 +75,41 @@ try {
         $arguments[4] = [string]$destination
         try {
             $method.Invoke($null, $arguments) | Out-Null
-        } catch [Reflection.TargetInvocationException] {
-            throw $_.Exception.InnerException
+        } catch {
+            $underlying = $_.Exception
+            while ($underlying.InnerException) { $underlying = $underlying.InnerException }
+            throw $underlying
         } finally { $stream.Dispose() }
     }
 
     $payload = New-TestPayload 'valid' $false
-    $destination = Join-Path $parent 'runtime-candidate'
-    Invoke-Extraction $payload $destination
     $expected = [BitConverter]::ToString($payload.Hash).Replace('-', '').ToLowerInvariant()
+    $destination = Join-Path $parent ($expected.Substring(0, 24) + '-1234abcd')
+    Invoke-Extraction $payload $destination
     $actual = [IO.File]::ReadAllText((Join-Path $destination '.complete')).Trim()
     if ($actual -ne $expected) { throw 'Completion marker does not identify the exact payload' }
     Write-Host 'Extraction succeeded without directory delete permission'
+
+    $incomplete = Join-Path $parent ($expected.Substring(0, 24) + '-incomplete')
+    New-Item -ItemType Directory -Path $incomplete | Out-Null
+    $findReady = $type.GetMethod('FindReadyRuntime', [Reflection.BindingFlags]'NonPublic,Static')
+    if (!$findReady) { throw 'FindReadyRuntime not found' }
+    $findArgs = [object[]]::new(2)
+    $findArgs[0] = [string]$parent
+    $findArgs[1] = [string]$expected
+    if ([string]$findReady.Invoke($null, $findArgs) -ne $destination) {
+        throw 'A completed runtime was not reused or an incomplete one was selected'
+    }
+    Write-Host 'Completed runtime was reused and incomplete extraction was ignored'
 
     $invalid = New-TestPayload 'invalid' $true
     $badDestination = Join-Path $parent 'invalid-candidate'
     $actualError = $null
     try { Invoke-Extraction $invalid $badDestination }
-    catch { $actualError = $_.Exception }
+    catch {
+        $actualError = $_.Exception
+        while ($actualError.InnerException) { $actualError = $actualError.InnerException }
+    }
     if ($actualError -isnot [IO.InvalidDataException]) {
         throw "Original invalid-archive error was masked by cleanup: $actualError"
     }
