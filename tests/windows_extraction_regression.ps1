@@ -13,7 +13,7 @@ try {
     $compiler = Join-Path $env:WINDIR 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'
     & $compiler /nologo /target:winexe /platform:x64 "/out:$stub" `
         /r:System.Windows.Forms.dll /r:System.Drawing.dll /r:System.IO.Compression.dll `
-        /r:System.IO.Compression.FileSystem.dll scripts/windows_launcher.cs
+        /r:System.IO.Compression.FileSystem.dll (Join-Path $PWD 'scripts\windows_launcher.cs')
     if ($LASTEXITCODE -ne 0) { throw 'Could not compile launcher' }
     $assembly = [Reflection.Assembly]::LoadFrom($stub)
     $type = $assembly.GetType('JParseLauncher', $true)
