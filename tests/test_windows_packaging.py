@@ -29,7 +29,7 @@ class PortableRuntimeTests(unittest.TestCase):
         if not executable or not runtime:
             self.skipTest("requires the built Windows executable and extracted runtime")
         runtime_path = PureWindowsPath(runtime)
-        profile = (PureWindowsPath("C:/Users") / ("u" * 20) / "AppData/Local/JParse"
+        profile = (PureWindowsPath("C:/Users") / ("u" * 40) / "AppData/Local/JParse"
                    / runtime_path.parent.name / runtime_path.name)
         with zipfile.ZipFile(executable) as archive:
             longest = max(len(item.filename) for item in archive.infolist())

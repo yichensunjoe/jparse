@@ -36,6 +36,13 @@ try {
     $acl.AddAccessRule($denyDirectory)
     Set-Acl -LiteralPath $parent -AclObject $acl
 
+    $probe = Join-Path $parent 'delete-denial-probe'
+    New-Item -ItemType Directory -Path $probe | Out-Null
+    $moveDenied = $false
+    try { [IO.Directory]::Move($probe, $probe + '-moved') }
+    catch { $moveDenied = $true }
+    if (!$moveDenied) { throw 'Test ACL did not deny directory renaming' }
+
     function New-TestPayload([string]$name, [bool]$invalid) {
         $zipPath = Join-Path $root ($name + '.zip')
         $zip = [IO.Compression.ZipFile]::Open($zipPath, [IO.Compression.ZipArchiveMode]::Create)
@@ -101,6 +108,26 @@ try {
         throw 'A completed runtime was not reused or an incomplete one was selected'
     }
     Write-Host 'Completed runtime was reused and incomplete extraction was ignored'
+
+    $resumePayload = New-TestPayload 'resume' $false
+    $resumeKey = [BitConverter]::ToString($resumePayload.Hash).Replace('-', '').ToLowerInvariant()
+    $resumeDestination = Join-Path $parent ($resumeKey.Substring(0, 24) + '-resume01')
+    New-Item -ItemType Directory -Path (Join-Path $resumeDestination 'python') -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $resumeDestination '.payload'), $resumeKey)
+    [IO.File]::WriteAllText((Join-Path $resumeDestination 'python/python.exe'), 'truncated')
+    $findIncomplete = $type.GetMethod('FindIncompleteRuntime', [Reflection.BindingFlags]'NonPublic,Static')
+    if (!$findIncomplete) { throw 'FindIncompleteRuntime not found' }
+    $resumeArgs = [object[]]::new(2)
+    $resumeArgs[0] = [string]$parent
+    $resumeArgs[1] = [string]$resumeKey
+    if ([string]$findIncomplete.Invoke($null, $resumeArgs) -ne $resumeDestination) {
+        throw 'Interrupted runtime was not selected for safe reuse'
+    }
+    Invoke-Extraction $resumePayload $resumeDestination
+    if ([IO.File]::ReadAllText((Join-Path $resumeDestination 'python/python.exe')) -ne 'test') {
+        throw 'Interrupted file was not safely replaced'
+    }
+    Write-Host 'Interrupted extraction resumed without leaving another runtime directory'
 
     $invalid = New-TestPayload 'invalid' $true
     $badDestination = Join-Path $parent 'invalid-candidate'
