@@ -49,6 +49,9 @@ struct MacOSUIChecks {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: ["pdf2zh_service": "bing"])
         _ = try await URLSession.shared.data(for: request)
+        manager.connectionStatus = .disconnected
+        manager.checkBackendHealth()
+        try await Task.sleep(nanoseconds: 50_000_000)
         manager.handleDroppedURLs([first])
         try await waitFor { !manager.isUploading }
         precondition(manager.errorMessage?.contains("在其他位置更改") == true)

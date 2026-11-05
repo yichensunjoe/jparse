@@ -146,7 +146,10 @@ def run_paddle_ocr(image_path: Path, paddle_python: Optional[Path] = None) -> Li
     worker_code = """
 import sys, json
 from paddleocr import PaddleOCR
-ocr = PaddleOCR(use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False, lang='en')
+# Windows oneDNN cannot execute some PP-OCRv6 PIR attributes. Use the normal
+# CPU backend there; other platforms keep their existing acceleration policy.
+options = {'enable_mkldnn': False} if sys.platform == 'win32' else {}
+ocr = PaddleOCR(use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False, lang='en', **options)
 res = ocr.predict(sys.argv[1])[0]
 out = []
 for b, t, s in zip(res['rec_boxes'], res['rec_texts'], res['rec_scores']):

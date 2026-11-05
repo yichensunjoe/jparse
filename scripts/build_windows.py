@@ -100,7 +100,7 @@ def main() -> None:
     run(str(ocr_python_dir / "python.exe"), "-c",
         "from paddleocr import PaddleOCR; "
         "PaddleOCR(use_doc_orientation_classify=False, use_doc_unwarping=False, "
-        "use_textline_orientation=False, lang='en')", env=ocr_env)
+        "use_textline_orientation=False, lang='en', enable_mkldnn=False)", env=ocr_env)
 
     payload = BUILD / "runtime.zip"
     with zipfile.ZipFile(payload, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=5, allowZip64=True) as archive:

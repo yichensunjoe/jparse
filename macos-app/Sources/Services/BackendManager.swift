@@ -304,9 +304,9 @@ public final class BackendManager: ObservableObject {
 
     private func refreshTranslationService() async {
         let revision = serviceUpdateRevision
-        guard !serviceUpdateInFlight else { return }
+        guard !serviceUpdateInFlight, !isUploading else { return }
         if let service = await fetchTranslationService(),
-           revision == serviceUpdateRevision, !serviceUpdateInFlight {
+           revision == serviceUpdateRevision, !serviceUpdateInFlight, !isUploading {
             selectedService = service
         }
     }

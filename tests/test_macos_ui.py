@@ -31,7 +31,9 @@ class TestMacOSUI(unittest.TestCase):
                 if self.path == "/api/tasks":
                     self.respond(200, tasks)
                 elif self.path == "/api/settings":
-                    self.respond(200, settings)
+                    snapshot = dict(settings)
+                    time.sleep(0.15)
+                    self.respond(200, snapshot)
                 else:
                     self.send_error(404)
 
