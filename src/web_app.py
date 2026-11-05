@@ -24,12 +24,14 @@ from urllib.parse import parse_qs, quote, unquote, urlparse
 from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
+WINDOWS_INDEX_HTML = Path(__file__).with_name("windows_workbench.html").read_text(encoding="utf-8")
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.router import probe_pdf_document_type, route_and_process_pdf
 from src.runtime_paths import identity_matches, local_urlopen, mark_active_runtime
 from src.watcher import acquire_lock, release_lock
+from src.windows_folder_picker import choose_output_folder
 
 logger = logging.getLogger("web_app")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -62,10 +64,20 @@ class ConversionTaskManager:
 
         self.tasks: List[Dict[str, Any]] = []
         self._lock = threading.Lock()
+        self._output_settings_lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="LiteParseWorker")
         self._subscribers: List[threading.Event] = []
         self._inbox_observations: Dict[str, tuple] = {}
         self._reservation_locks: Dict[str, Any] = {}
+        self._reservation_outputs: Dict[str, tuple] = {}
+        self.output_settings_error: Optional[str] = None
+        if os.environ.get("JPARSE_UI_STYLE") == "windows":
+            try:
+                saved_outbox = self._read_config().get("windows_studio_outbox")
+                if saved_outbox:
+                    self.set_outbox_dir(saved_outbox)
+            except (RuntimeError, ValueError) as exc:
+                self.output_settings_error = "已保存的输出目录不可用，请在设置中修复：%s" % exc
 
     def scan_inbox_once(self, now: Optional[float] = None, settle_seconds: float = 5) -> None:
         """Claim only stable PDFs, atomically isolating them from other watchers."""
@@ -119,8 +131,7 @@ class ConversionTaskManager:
         for key in set(self._inbox_observations) - visible:
             self._inbox_observations.pop(key, None)
 
-    def configured_service(self) -> str:
-        """Read the explicitly selected default translation service."""
+    def _read_config(self) -> Dict[str, Any]:
         config_path = self.project_root / "config.json"
         if not config_path.is_file():
             config_path = _PROJECT_ROOT / "config.json"
@@ -128,32 +139,61 @@ class ConversionTaskManager:
             config = json.loads(config_path.read_text(encoding="utf-8"))
             if not isinstance(config, dict):
                 raise ValueError("配置不是对象")
+            return config
+        except (OSError, ValueError) as exc:
+            raise RuntimeError("无法读取配置: %s" % exc) from exc
+
+    def configured_service(self) -> str:
+        """Read the explicitly selected default translation service."""
+        try:
+            config = self._read_config()
             service = config.get("pdf2zh_service", "bing")
             if not isinstance(service, str) or not service.strip():
                 raise ValueError("翻译服务不能为空")
             return service.strip()
-        except (OSError, ValueError) as exc:
+        except (RuntimeError, ValueError) as exc:
             raise RuntimeError("无法读取翻译配置: %s" % exc) from exc
 
-    def set_translation_service(self, service: str) -> None:
-        if not isinstance(service, str) or service not in {"bing", "google"}:
-            raise ValueError("翻译服务仅支持 bing 或 google")
+    def _update_config(self, updates: Dict[str, Any]) -> None:
         target = self.project_root / "config.json"
-        source = target if target.exists() else _PROJECT_ROOT / "config.json"
         with self._lock:
             try:
-                config = json.loads(source.read_text(encoding="utf-8"))
-                if not isinstance(config, dict):
-                    raise ValueError("配置不是对象")
-                config["pdf2zh_service"] = service
+                config = self._read_config()
+                config.update(updates)
                 stage = self.project_root / (".config-%d-%d.tmp" % (os.getpid(), time.time_ns()))
                 try:
                     stage.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
                     os.replace(str(stage), str(target))
                 finally:
-                    stage.unlink(missing_ok=True)
-            except (OSError, ValueError) as exc:
-                raise ValueError("无法保存翻译配置：%s" % exc) from exc
+                    try:
+                        stage.unlink(missing_ok=True)
+                    except OSError:
+                        logger.warning("无法清理临时配置文件: %s", stage)
+            except (OSError, RuntimeError, ValueError) as exc:
+                raise ValueError("无法保存配置：%s" % exc) from exc
+
+    def set_translation_service(self, service: str) -> None:
+        if not isinstance(service, str) or service not in {"bing", "google"}:
+            raise ValueError("翻译服务仅支持 bing 或 google")
+        self._update_config({"pdf2zh_service": service})
+
+    def windows_appearance(self) -> Dict[str, str]:
+        default = {"accent": "plum", "canvas": "porcelain"}
+        value = self._read_config().get("windows_ui_appearance", default)
+        if not isinstance(value, dict):
+            return default
+        if not isinstance(value.get("accent"), str) or value["accent"] not in {"inkBlue", "forest", "plum", "graphite"}:
+            return default
+        if not isinstance(value.get("canvas"), str) or value["canvas"] not in {"warmPaper", "mist", "porcelain"}:
+            return default
+        return {"accent": value["accent"], "canvas": value["canvas"]}
+
+    def set_windows_appearance(self, accent: str, canvas: str) -> None:
+        if not isinstance(accent, str) or accent not in {"inkBlue", "forest", "plum", "graphite"}:
+            raise ValueError("主题色无效")
+        if not isinstance(canvas, str) or canvas not in {"warmPaper", "mist", "porcelain"}:
+            raise ValueError("纸张底色无效")
+        self._update_config({"windows_ui_appearance": {"accent": accent, "canvas": canvas}})
 
     def watch_inbox(self) -> None:
         while True:
@@ -164,7 +204,7 @@ class ConversionTaskManager:
                 logger.exception("扫描投递箱失败")
             time.sleep(2)
 
-    def set_outbox_dir(self, raw_path: str) -> Path:
+    def set_outbox_dir(self, raw_path: str, persist: bool = False) -> Path:
         """Switch the output directory for future tasks.
 
         The path comes from the desktop app's native folder picker, so it may
@@ -182,6 +222,13 @@ class ConversionTaskManager:
         except (OSError, ValueError) as exc:
             raise ValueError("输出文件夹路径无效：%s" % exc) from exc
 
+        try:
+            candidate.relative_to(self.inbox_dir.resolve())
+        except ValueError:
+            pass
+        else:
+            raise ValueError("输出文件夹不能位于投递箱内，否则成果会被重复处理")
+
         if candidate.exists() and not candidate.is_dir():
             raise ValueError("输出路径不是文件夹")
 
@@ -193,7 +240,12 @@ class ConversionTaskManager:
         except OSError as exc:
             raise ValueError("输出文件夹不可写：%s" % exc) from exc
 
-        self.outbox_dir = candidate
+        with self._output_settings_lock:
+            if persist:
+                self._update_config({"windows_studio_outbox": "" if candidate == self.default_outbox_dir else str(candidate)})
+            with self._lock:
+                self.outbox_dir = candidate
+                self.output_settings_error = None
         return candidate
 
     def _stem_free(self, stem: str) -> bool:
@@ -230,6 +282,9 @@ class ConversionTaskManager:
                         release_lock(handle)
                     else:
                         self._reservation_locks[stem] = handle
+                        # Keep the directory used for the collision check even
+                        # if the user changes it while the upload is stored.
+                        self._reservation_outputs[stem] = (self.outbox_dir, self.output_settings_error)
                         return stem
                 stem = "%s-%d" % (base, index)
                 index += 1
@@ -237,6 +292,7 @@ class ConversionTaskManager:
     def release_reservation(self, stem: str) -> None:
         with self._lock:
             handle = self._reservation_locks.pop(stem, None)
+            self._reservation_outputs.pop(stem, None)
         release_lock(handle)
 
     def recover_interrupted(self) -> None:
@@ -304,6 +360,12 @@ class ConversionTaskManager:
             "options": options or {},
         }
         with self._lock:
+            # Use the same folder that was checked when reserving this stem.
+            output, error = self._reservation_outputs.get(
+                file_path.stem, (self.outbox_dir, self.output_settings_error)
+            )
+            task["output_dir"] = str(output)
+            task["output_error"] = error
             self.tasks.insert(0, task)
             del self.tasks[200:]
         self._notify_subscribers()
@@ -317,6 +379,15 @@ class ConversionTaskManager:
     def get_tasks(self) -> List[Dict[str, Any]]:
         with self._lock:
             return list(self.tasks)
+
+    def is_registered_output(self, target: Path) -> bool:
+        """Allow an exact completed output, including one in a previous directory."""
+        with self._lock:
+            return any(
+                Path(output["path"]) == target
+                for task in self.tasks if task["status"] == TaskStatus.COMPLETED
+                for output in task.get("output_files", [])
+            )
 
     def _update_task(self, task_id: str, **kwargs):
         with self._lock:
@@ -349,6 +420,8 @@ class ConversionTaskManager:
 
         start_time = time.time()
         try:
+            if task.get("output_error"):
+                raise RuntimeError(task["output_error"])
             # 1. Probing phase
             self._update_task(task_id, status=TaskStatus.PROBING, progress=10)
             doc_type = probe_pdf_document_type(input_path)
@@ -370,7 +443,7 @@ class ConversionTaskManager:
                 config["upstream_extractor"] = "opendataloader"
             output_paths = route_and_process_pdf(
                 pdf_path=input_path,
-                outbox_dir=self.outbox_dir,
+                outbox_dir=Path(task["output_dir"]),
                 config=config,
             )
 
@@ -383,7 +456,9 @@ class ConversionTaskManager:
             out_info = [
                 {
                     "name": p.name,
-                    "path": str(p),
+                    # Freeze the resolved path at completion, so replacing an
+                    # output with a symlink cannot authorize an unrelated file.
+                    "path": str(p.resolve()),
                     "size": p.stat().st_size if p.exists() else 0,
                     "is_pdf": p.suffix.lower() == ".pdf",
                     "is_html": p.suffix.lower() == ".html",
@@ -1237,7 +1312,8 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
 
         if path in ("/", "/index.html"):
             nonce = secrets.token_urlsafe(16)
-            content = INDEX_HTML.replace("__CSP_NONCE__", nonce).encode("utf-8")
+            template = WINDOWS_INDEX_HTML if os.environ.get("JPARSE_UI_STYLE") == "windows" else INDEX_HTML
+            content = template.replace("__CSP_NONCE__", nonce).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(content)))
@@ -1256,6 +1332,7 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
         if path == "/api/settings":
             try:
                 configured_service = self.task_manager.configured_service()
+                windows_appearance = self.task_manager.windows_appearance()
             except RuntimeError as exc:
                 self._send_json({"ok": False, "error": str(exc)}, status=400)
                 return
@@ -1264,6 +1341,8 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
                     "outbox_dir": str(self.task_manager.outbox_dir),
                     "default_outbox_dir": str(self.task_manager.default_outbox_dir),
                     "pdf2zh_service": configured_service,
+                    "windows_appearance": windows_appearance,
+                    "output_error": self.task_manager.output_settings_error or "",
                 }
             )
             return
@@ -1291,12 +1370,16 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
             if not file_path_str:
                 self.send_error(400, "Missing path parameter")
                 return
-            outbox_root = self.task_manager.outbox_dir.resolve()
             try:
                 target_path = Path(file_path_str).resolve()
-                target_path.relative_to(outbox_root)
+                try:
+                    target_path.relative_to(self.task_manager.outbox_dir.resolve())
+                    allowed = True
+                except ValueError:
+                    allowed = self.task_manager.is_registered_output(target_path)
             except (OSError, ValueError):
-                # 字符串前缀比较会放过 `outbox-backup/` 这类兄弟目录，必须用真实路径包含。
+                allowed = False
+            if not allowed:
                 self.send_error(403, "Access denied")
                 return
             if not target_path.is_file() or target_path.name.startswith("."):
@@ -1331,6 +1414,35 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
 
+        if path == "/api/reveal_output":
+            file_path_str = parse_qs(parsed.query).get("path", [""])[0]
+            try:
+                target = Path(file_path_str).resolve()
+                allowed = bool(file_path_str) and self.task_manager.is_registered_output(target)
+            except (OSError, ValueError):
+                allowed = False
+            if not allowed or not target.is_file() or target.name.startswith("."):
+                self._send_json({"ok": False, "error": "成果文件不存在或不可访问"}, status=403)
+                return
+            self._send_json({"ok": True, "revealed": reveal_in_finder(target.parent)})
+            return
+
+        if path == "/api/choose_outbox":
+            try:
+                selected = choose_output_folder(self.task_manager.outbox_dir)
+                if selected is None:
+                    self._send_json({"ok": True, "selected": False})
+                    return
+                target = self.task_manager.set_outbox_dir(
+                    str(selected), persist=os.environ.get("JPARSE_UI_STYLE") == "windows"
+                )
+            except (OSError, RuntimeError, ValueError) as exc:
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+                return
+            self._send_json({"ok": True, "selected": True, "outbox_dir": str(target),
+                             "default_outbox_dir": str(self.task_manager.default_outbox_dir)})
+            return
+
         if path == "/api/reveal_outbox":
             self._send_json({"ok": True, "revealed": reveal_in_finder(self.task_manager.outbox_dir)})
             return
@@ -1362,6 +1474,19 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
                 self.send_error(400, "Expected a JSON object")
                 return
 
+            if "windows_appearance" in payload:
+                if len(payload) != 1 or not isinstance(payload["windows_appearance"], dict):
+                    self._send_json({"ok": False, "error": "外观设置格式无效"}, status=400)
+                    return
+                appearance = payload["windows_appearance"]
+                try:
+                    self.task_manager.set_windows_appearance(appearance.get("accent"), appearance.get("canvas"))
+                except ValueError as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, status=400)
+                    return
+                self._send_json({"ok": True, "windows_appearance": self.task_manager.windows_appearance()})
+                return
+
             if "pdf2zh_service" in payload:
                 if "outbox_dir" in payload:
                     self._send_json({"ok": False, "error": "请分别修改输出目录与翻译服务"}, status=400)
@@ -1375,7 +1500,9 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
                 return
 
             try:
-                target = self.task_manager.set_outbox_dir(payload.get("outbox_dir"))
+                target = self.task_manager.set_outbox_dir(
+                    payload.get("outbox_dir"), persist=os.environ.get("JPARSE_UI_STYLE") == "windows"
+                )
             except ValueError as exc:
                 self._send_json({"ok": False, "error": str(exc)}, status=400)
                 return

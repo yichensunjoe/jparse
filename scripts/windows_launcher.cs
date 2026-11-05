@@ -121,6 +121,7 @@ internal static class JParseLauncher
         start.EnvironmentVariables["JPARSE_DATA_DIR"] = data;
         start.EnvironmentVariables["JPARSE_RUNTIME_ID"] = runtimeId;
         start.EnvironmentVariables["JPARSE_WATCH_INBOX"] = "1";
+        start.EnvironmentVariables["JPARSE_UI_STYLE"] = "windows";
         start.EnvironmentVariables["JPARSE_BUNDLED_PYTHON"] = Path.Combine(pythonDir, "python.exe");
         start.EnvironmentVariables["JPARSE_PADDLE_PYTHON"] = Path.Combine(runtime, "ocr-python", "python.exe");
         start.EnvironmentVariables["PADDLE_PDX_CACHE_HOME"] = Path.Combine(runtime, "ocr-models");

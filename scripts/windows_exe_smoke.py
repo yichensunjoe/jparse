@@ -28,6 +28,10 @@ root = Path(os.environ["JPARSE_DATA_DIR"])
 inbox = root / "inbox"
 inbox.mkdir(parents=True, exist_ok=True)
 
+with urlopen(f"http://127.0.0.1:{args.port}/", timeout=10) as response:
+    workbench = response.read().decode("utf-8")
+    assert "添加文献，开始处理" in workbench and "JParse" in workbench, "Windows desktop UI was not served"
+
 if os.environ.get("JPARSE_PADDLE_PYTHON"):
     from PIL import Image, ImageDraw, ImageFont
     from src.bitmap_figure_translator import run_paddle_ocr

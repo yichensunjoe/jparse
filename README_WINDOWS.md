@@ -24,7 +24,7 @@ EXE 包含位图图例所用的 PaddleOCR 运行环境与模型。它没有内�
 
 欢迎使用 **JParse**（Windows 版本）。JParse 是专为学术论文、技术规范及图书文献打造的智能重构、原位版面识别与中英翻译排版引擎。
 
-Windows 版本使用 Edge 或 Chrome 的应用窗口呈现网页工作台；macOS 版本使用独立的原生 SwiftUI 界面，因此两者的布局与外观不同，PDF 处理后端仍来自同一项目。
+Windows 版本使用 Edge 或 Chrome 的应用窗口呈现工作台，macOS 版本使用原生 SwiftUI 界面。新版 Windows 界面的首页、任务列表、设置和主题配色已对齐 Mac 版；窗口边框、字体和系统文件选择器仍会随操作系统有所区别。
 
 ---
 

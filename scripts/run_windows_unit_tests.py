@@ -5,7 +5,7 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 suite = unittest.defaultTestLoader.loadTestsFromNames(
-    ["tests.test_windows_packaging", "tests.test_windows_support"]
+    ["tests.test_windows_packaging", "tests.test_windows_support", "tests.test_windows_ui"]
 )
 result = unittest.TextTestRunner(verbosity=2).run(suite)
 raise SystemExit(not result.wasSuccessful())

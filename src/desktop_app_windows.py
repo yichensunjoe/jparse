@@ -164,6 +164,8 @@ def launch_desktop_window(port: int = 8765) -> None:
 
 
 def main() -> None:
+    if sys.platform == "win32":
+        os.environ.setdefault("JPARSE_UI_STYLE", "windows")
     port = default_port()
     explicit_port = False
     for arg in sys.argv[1:]:

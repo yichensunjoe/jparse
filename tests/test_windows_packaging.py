@@ -39,13 +39,14 @@ class PortableRuntimeTests(unittest.TestCase):
         node = shutil.which("node")
         if not node:
             self.skipTest("Node.js is not installed")
-        scripts = re.findall(r"<script[^>]*>(.*?)</script>", web_app.INDEX_HTML, flags=re.S)
-        self.assertEqual(len(scripts), 1)
-        with tempfile.TemporaryDirectory() as tmp:
-            script = Path(tmp) / "workbench.js"
-            script.write_text(scripts[0], encoding="utf-8")
-            result = subprocess.run([node, "--check", str(script)], capture_output=True, text=True)
-            self.assertEqual(result.returncode, 0, result.stderr)
+        for name, html in (("legacy", web_app.INDEX_HTML), ("windows", web_app.WINDOWS_INDEX_HTML)):
+            with self.subTest(workbench=name), tempfile.TemporaryDirectory() as tmp:
+                scripts = re.findall(r"<script[^>]*>(.*?)</script>", html, flags=re.S)
+                self.assertEqual(len(scripts), 1)
+                script = Path(tmp) / "workbench.js"
+                script.write_text(scripts[0], encoding="utf-8")
+                result = subprocess.run([node, "--check", str(script)], capture_output=True, text=True)
+                self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_packaged_fonts_are_resolved_from_bundled_directory(self):
         from src.runtime_paths import font_directory
