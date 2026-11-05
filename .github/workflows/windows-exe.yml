@@ -22,6 +22,7 @@ jobs:
           cache-dependency-path: |
             scripts/requirements-windows.txt
             scripts/requirements-windows-ocr.txt
+            scripts/constraints-windows.txt
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

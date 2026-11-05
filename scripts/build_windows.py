@@ -67,7 +67,8 @@ def main() -> None:
         )
     site_packages = python_dir / "Lib" / "site-packages"
     run(sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--no-compile",
-        "--target", str(site_packages), "-r", str(ROOT / "scripts" / "requirements-windows.txt"))
+        "--target", str(site_packages), "-c", str(ROOT / "scripts" / "constraints-windows.txt"),
+        "-r", str(ROOT / "scripts" / "requirements-windows.txt"))
     run(sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--no-compile",
         "--target", str(ocr_python_dir / "Lib" / "site-packages"),
         "-r", str(ROOT / "scripts" / "requirements-windows-ocr.txt"))
