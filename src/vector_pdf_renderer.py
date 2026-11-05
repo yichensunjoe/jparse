@@ -30,6 +30,23 @@ def get_pdf2zh_binary() -> Path:
     raise FileNotFoundError("未找到可执行的 pdf2zh 虚拟环境二进制文件 (请确认 ~/.local/venvs/pdf2zh 存在)")
 
 
+def get_pdf2zh_command() -> List[str]:
+    """Use the relocatable bundled interpreter, or the existing CLI install."""
+    bundled_python = os.environ.get("JPARSE_BUNDLED_PYTHON")
+    if bundled_python:
+        executable = Path(bundled_python)
+        if not executable.is_file():
+            raise FileNotFoundError("JParse 内置 Python 不存在: %s" % executable)
+        command = [str(executable), "-m", "pdf2zh.pdf2zh"]
+        model = os.environ.get("JPARSE_LAYOUT_MODEL")
+        if model:
+            if not Path(model).is_file():
+                raise FileNotFoundError("JParse 内置版面模型不存在: %s" % model)
+            command.extend(["--onnx", model])
+        return command
+    return [str(get_pdf2zh_binary())]
+
+
 def process_vector_pdf_with_pdf2zh(
     pdf_path: Path,
     outbox_dir: Path,
@@ -54,7 +71,7 @@ def process_vector_pdf_with_pdf2zh(
     pdf_path = Path(pdf_path).resolve()
     outbox_dir = Path(outbox_dir).resolve()
     outbox_dir.mkdir(parents=True, exist_ok=True)
-    pdf2zh_bin = get_pdf2zh_binary()
+    pdf2zh_command = get_pdf2zh_command()
 
     stem = pdf_path.stem
     output_files: List[Path] = []
@@ -70,9 +87,12 @@ def process_vector_pdf_with_pdf2zh(
 
     with tempfile.TemporaryDirectory() as tmp_dir_str:
         tmp_dir = Path(tmp_dir_str)
-        cmd = [
-            str(pdf2zh_bin),
-            str(pdf_path),
+        # pdf2zh deletes inputs located under the system temp directory. Give
+        # it a disposable copy so the user's original can always be archived.
+        staged_input = tmp_dir / pdf_path.name
+        shutil.copy2(pdf_path, staged_input)
+        cmd = pdf2zh_command + [
+            str(staged_input),
             "-o", str(tmp_dir),
             "-s", service,
             "-t", str(thread),
@@ -82,7 +102,9 @@ def process_vector_pdf_with_pdf2zh(
             cmd.extend(["-p", pages])
 
         logger.info("正在调用 pdf2zh 矢量引擎进行原位擦除与学术排版翻译: %s", " ".join(cmd))
-        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=timeout)
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0
+        res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                             encoding="utf-8", errors="replace", timeout=timeout, creationflags=flags)
         if res.returncode != 0:
             logger.error("pdf2zh 执行失败: %s\n%s", res.stdout, res.stderr)
             raise RuntimeError(f"pdf2zh 翻译失败: {res.stderr or res.stdout}")
@@ -93,7 +115,7 @@ def process_vector_pdf_with_pdf2zh(
 
         if not mono_candidates and not dual_candidates:
             # Fallback search any generated pdf
-            all_pdfs = [p for p in tmp_dir.glob("*.pdf") if p != pdf_path]
+            all_pdfs = [p for p in tmp_dir.glob("*.pdf") if p != staged_input]
             if not all_pdfs:
                 raise FileNotFoundError(f"pdf2zh 未能在临时目录中生成翻译 PDF: {res.stdout}")
             mono_candidates = all_pdfs[:1]

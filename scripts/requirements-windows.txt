@@ -1,0 +1,4 @@
+# Match the production translation engine used by the existing application.
+pdf2zh==1.9.11
+babeldoc==0.2.33
+opendataloader-pdf==2.5.15

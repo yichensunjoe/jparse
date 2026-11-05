@@ -1,5 +1,23 @@
 # JParse — Windows 版快速上手与使用指南
 
+## Windows EXE（推荐普通用户使用）
+
+从 GitHub Actions 成功构建的 `JParse-Windows-x64` 构件中下载并解压
+`JParse-Windows-x64.exe`，在 **64 位 Windows 10/11** 上双击运行。首次启动需要
+将内置运行环境展开到当前用户目录，可能需要几分钟；之后再次启动会复用该环境。
+无需单独安装 Python 或 Java。工作台使用已安装的 Microsoft Edge 或 Google Chrome。
+
+工作文件保存在 `%LOCALAPPDATA%\JParse\data\`：`inbox` 为投递目录，`outbox`
+为输出目录，`processed` 和 `failed` 分别保存处理成功和失败的原件，`logs` 保存
+有大小上限的运行日志。运行环境位于同一 `JParse\runtimes\` 目录，不要在程序运行
+期间删除。关闭窗口不会自动停止后台服务，注销用户会话后会停止。
+
+PDF 的识别和排版在本机进行，原始 PDF 不上传；默认 Bing 翻译需要联网，提取的
+文本会发送至所选翻译服务。此 EXE 未进行商业代码签名，Windows 可能显示安全提示。
+Windows CI 验收范围以工作流实际结果为准；扫描件识别效果取决于文档本身和可用的 OCR 能力。
+
+下面是面向源码开发者的旧版 Python 与批处理启动方式。
+
 欢迎使用 **JParse**（Windows 版本）。JParse 是专为学术论文、技术规范及图书文献打造的智能重构、原位版面识别与中英翻译排版引擎。
 
 Windows 版本基于确定性算法与现代 Web/Chromium 原生应用模式，无需安装任何笨重的第三方框架，**直接利用 Windows 10/11 内置的 Microsoft Edge 或 Google Chrome 呈现独立桌面视窗**，提供与 macOS 原生客户端一致的丝滑交互与高保真排版体验。

@@ -21,6 +21,8 @@ logger = logging.getLogger("desktop_app_windows")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 
 def find_windows_app_browser() -> tuple[str, str]:
@@ -82,16 +84,18 @@ def start_backend_server(port: int = 8765) -> subprocess.Popen:
         creationflags=creationflags,
     )
 
-    # Wait up to 6 seconds for backend readiness
-    deadline = time.monotonic() + 6.0
+    # First launch can load several native libraries on slower Windows PCs.
+    deadline = time.monotonic() + 30.0
     while time.monotonic() < deadline:
         if is_backend_alive(port, timeout=0.5):
             logger.info("JParse 后台服务已就绪 (127.0.0.1:%d)", port)
             return proc
+        if proc.poll() is not None:
+            raise RuntimeError("JParse 后台服务启动失败，请查看用户数据目录下的 logs/desktop.log。")
         time.sleep(0.2)
 
-    logger.warning("JParse 后台服务未在规定时间内响应，但子进程已创建 (PID %d)", proc.pid)
-    return proc
+    proc.terminate()
+    raise RuntimeError("JParse 后台服务启动超时，请查看用户数据目录下的 logs/desktop.log。")
 
 
 def launch_desktop_window(port: int = 8765) -> None:
@@ -135,6 +139,11 @@ def main() -> None:
         if arg.isdigit():
             port = int(arg)
 
+    if "--server-only" in sys.argv:
+        from src.web_app import run_server
+        run_server(port=port, open_browser=False)
+        return
+
     # 1. Check or start backend
     if not is_backend_alive(port):
         start_backend_server(port)
@@ -144,4 +153,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        logger.exception("JParse 启动失败")
+        if sys.platform == "win32":
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(None, str(exc), "JParse 启动失败", 0x10)
+        raise

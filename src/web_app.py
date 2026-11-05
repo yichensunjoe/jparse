@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import mimetypes
 import os
 from pathlib import Path
@@ -1293,9 +1294,23 @@ def _instance_serving(port: int) -> bool:
         return False
 
 
+def get_data_root() -> Path:
+    """Keep portable-app user files outside the bundled, replaceable code."""
+    configured = os.environ.get("JPARSE_DATA_DIR")
+    return Path(configured).expanduser().resolve() if configured else _PROJECT_ROOT
+
+
 def run_server(port: int = 8765, open_browser: bool = True):
     """Start the LiteParse Interactive Application server."""
-    project_root = Path(__file__).resolve().parent.parent
+    project_root = get_data_root()
+    if os.environ.get("JPARSE_DATA_DIR"):
+        log_dir = project_root / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        handler = RotatingFileHandler(
+            log_dir / "desktop.log", maxBytes=1048576, backupCount=3, encoding="utf-8"
+        )
+        handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
+        logging.getLogger().addHandler(handler)
     task_mgr = ConversionTaskManager(project_root=project_root)
     LiteParseAppHandler.task_manager = task_mgr
 

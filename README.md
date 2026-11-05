@@ -5,7 +5,7 @@
 基于确定性本地算法与学术级排版引擎，实现跨 macOS 与 Windows 双系统的本地桌面与后台自动化中枢 **JParse**：
 将 PDF 放入 `inbox/` 或直接拖入桌面端视窗，自动识别文档类型（现代矢量文献 / 扫描书籍），并在 `outbox/` 交付出版级单语精译版与双语对照版 PDF，同时保留排好版的 HTML 与便于 Agent 分析的纯净 Markdown。全程不调用大模型，原始 PDF 永不上传。
 
-> 🪟 **Windows 用户专用指南**：请查阅 [`README_WINDOWS.md`](README_WINDOWS.md)，提供一键安装向导与独立无黑框桌面客户端。
+> 🪟 **Windows 用户**：请查阅 [`README_WINDOWS.md`](README_WINDOWS.md)，从 Windows CI 构件下载自包含 EXE，或按源码方式运行。
 
 ## 范围
 
@@ -69,6 +69,7 @@
 - [`停止自动识别.command`](停止自动识别.command)
 
 ### Windows 用户入口（详见 [Windows 指南](README_WINDOWS.md)）
+- `JParse-Windows-x64.exe`：由 GitHub Actions 构建的自包含桌面入口，下载构件后双击运行
 - [`一键安装环境-Windows.bat`](一键安装环境-Windows.bat)：自动创建虚拟环境并安装核心排版依赖
 - [`启动JParse桌面应用(无黑框).vbs`](启动JParse桌面应用(无黑框).vbs)：以原生纯净桌面视窗无黑框静默拉起 JParse Studio（**日常推荐**）
 - [`启动JParse桌面应用.bat`](启动JParse桌面应用.bat)：以独立桌面应用模式启动 JParse Studio（保留控制台日志）
