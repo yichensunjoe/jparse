@@ -4,6 +4,14 @@
 
 规则：执行任务前先读本文件；任务完成后**双写**——先追加本文件，再同步追加总库（见 AGENTS.md）。
 
+## 2026-11-05 · Windows 自包含 EXE 与 CI 验证（P052-LiteParse-PDF自动识别）
+
+- 场景：将 JParse 桌面应用打包为 Windows x64 单文件 EXE，并在仓库 CI 实际运行。
+- 结论做法：Windows CI 打包可重定位 Python、Java、字体、版面模型与独立 PaddleOCR 环境；运行数据放用户目录，投递箱稳定后认领，任务锁保护中断恢复；翻译服务以配置为准。
+- 踩坑点：pythonw 无 stderr 会令默认 HTTP 日志使请求断连；pdf2zh 会删除临时目录中的输入，必须只传副本；Windows Paddle oneDNN 与模型不兼容，改用普通 CPU 后端；锁定已验证的翻译依赖避免上游 API 破坏。
+- 验证：本机 336 项单测、合成 PDF 翻译归档与离线 OCR 通过；Windows 主分支 CI 41960426028 通过 43 项平台测试、EXE 双击启动、OCR、PDF 转换、投递箱及扫描失败归档。
+- 适用场景：本地优先的 Python/PDF 桌面程序 Windows 打包及跨平台 CI 验收。
+
 ## 2026-11-05 · 清理 Windows 安装包产物与下线 GitHub Release（P052-LiteParse-PDF自动识别）
 
 - 场景：用户要求删除关于 Windows 安装包的内容（不希望保留 release zip 二进制包与 GitHub Release 资产）。
