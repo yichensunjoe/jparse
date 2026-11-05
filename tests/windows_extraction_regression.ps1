@@ -71,8 +71,8 @@ try {
         $arguments[0] = $stream
         $arguments[1] = $payload.Size
         $arguments[2] = $payload.Hash
-        $arguments[3] = $parent
-        $arguments[4] = $destination
+        $arguments[3] = [string]$parent
+        $arguments[4] = [string]$destination
         try {
             $method.Invoke($null, $arguments) | Out-Null
         } catch [Reflection.TargetInvocationException] {
