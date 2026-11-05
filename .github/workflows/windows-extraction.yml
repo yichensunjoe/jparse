@@ -1,0 +1,25 @@
+name: Windows extraction regression
+on:
+  push:
+    branches: [main, 'codex/**']
+    paths:
+      - 'scripts/windows_launcher.cs'
+      - 'tests/windows_extraction_regression.ps1'
+      - '.github/workflows/windows-extraction.yml'
+  pull_request:
+    paths:
+      - 'scripts/windows_launcher.cs'
+      - 'tests/windows_extraction_regression.ps1'
+      - '.github/workflows/windows-extraction.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  restricted-acl:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Exercise restricted directory permissions
+        shell: pwsh
+        run: ./tests/windows_extraction_regression.ps1

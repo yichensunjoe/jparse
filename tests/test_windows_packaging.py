@@ -8,12 +8,13 @@ import re
 import shutil
 import subprocess
 from http.server import BaseHTTPRequestHandler
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 import sys
 import tempfile
 import threading
 import unittest
 import urllib.request
+import zipfile
 from unittest.mock import MagicMock, patch
 from urllib.request import urlopen
 from urllib.error import HTTPError
@@ -22,6 +23,18 @@ from src import desktop_app_windows, vector_pdf_renderer, web_app
 
 
 class PortableRuntimeTests(unittest.TestCase):
+    def test_runtime_paths_fit_legacy_windows_profile(self):
+        executable = os.environ.get("JPARSE_BUILT_EXE")
+        runtime = os.environ.get("JPARSE_RUNTIME_ROOT")
+        if not executable or not runtime:
+            self.skipTest("requires the built Windows executable and extracted runtime")
+        runtime_path = PureWindowsPath(runtime)
+        profile = (PureWindowsPath("C:/Users") / ("u" * 40) / "AppData/Local/JParse"
+                   / runtime_path.parent.name / runtime_path.name)
+        with zipfile.ZipFile(executable) as archive:
+            longest = max(len(item.filename) for item in archive.infolist())
+        self.assertLess(len(str(profile)) + 1 + longest, 260)
+
     def test_workbench_script_has_valid_javascript(self):
         node = shutil.which("node")
         if not node:
