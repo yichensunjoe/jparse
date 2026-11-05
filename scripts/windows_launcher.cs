@@ -107,7 +107,7 @@ internal static class JParseLauncher
         ProcessStartInfo start = new ProcessStartInfo();
         start.FileName = pythonw;
         start.WorkingDirectory = Path.Combine(runtime, "project");
-        StringBuilder arguments = new StringBuilder(Quote(script));
+        StringBuilder arguments = new StringBuilder("-X utf8 ").Append(Quote(script));
         foreach (string arg in args) arguments.Append(" ").Append(Quote(arg));
         start.Arguments = arguments.ToString();
         start.UseShellExecute = false;

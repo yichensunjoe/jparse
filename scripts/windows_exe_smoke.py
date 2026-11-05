@@ -102,16 +102,17 @@ if not args.offline_only:
     print("Desktop upload, Bing translation, PDF delivery and archival passed:", names, flush=True)
 
     # A normal PDF dropped into the actual inbox must be processed automatically.
-    (inbox / "watcher-smoke.pdf").write_bytes(pdf_bytes)
+    watcher_name = "投递测试.pdf"
+    (inbox / watcher_name).write_bytes(pdf_bytes)
     deadline = time.monotonic() + 420
     while time.monotonic() < deadline:
-        if (root / "processed" / "watcher-smoke.pdf").exists():
+        if (root / "processed" / watcher_name).exists():
             break
-        if (root / "failed" / "watcher-smoke.pdf").exists():
+        if (root / "failed" / watcher_name).exists():
             raise AssertionError("Inbox watcher failed to process its PDF")
         time.sleep(2)
-    assert (root / "processed" / "watcher-smoke.pdf").is_file(), "Inbox PDF was not processed"
-    assert (root / "outbox" / "watcher-smoke-中文精译版.pdf").is_file()
+    assert (root / "processed" / watcher_name).is_file(), "Inbox PDF was not processed"
+    assert (root / "outbox" / "投递测试-中文精译版.pdf").is_file()
     print("Inbox watcher processed and archived the PDF", flush=True)
 
     # Image-only scans are not silently marked successful if extraction found

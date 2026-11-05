@@ -53,7 +53,7 @@ class PortableRuntimeTests(unittest.TestCase):
             python.touch()
             with patch.dict(os.environ, {"JPARSE_BUNDLED_PYTHON": str(python), "JPARSE_LAYOUT_MODEL": ""}):
                 command = vector_pdf_renderer.get_pdf2zh_command()
-            self.assertEqual(command, [str(python), "-m", "pdf2zh.pdf2zh"])
+            self.assertEqual(command, [str(python), "-X", "utf8", "-m", "pdf2zh.pdf2zh"])
 
     def test_missing_bundled_python_is_reported(self):
         with tempfile.TemporaryDirectory() as tmp:

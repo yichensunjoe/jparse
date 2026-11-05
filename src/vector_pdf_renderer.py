@@ -37,7 +37,7 @@ def get_pdf2zh_command() -> List[str]:
         executable = Path(bundled_python)
         if not executable.is_file():
             raise FileNotFoundError("JParse 内置 Python 不存在: %s" % executable)
-        command = [str(executable), "-m", "pdf2zh.pdf2zh"]
+        command = [str(executable), "-X", "utf8", "-m", "pdf2zh.pdf2zh"]
         model = os.environ.get("JPARSE_LAYOUT_MODEL")
         if model:
             if not Path(model).is_file():

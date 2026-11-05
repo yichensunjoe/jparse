@@ -165,7 +165,7 @@ print('__JSON_START__' + json.dumps(out))
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if sys.platform == "win32" else 0,
         )
         if res.returncode != 0:
-            logger.warning("PaddleOCR 执行返回非零码: %s", res.stderr[:200])
+            logger.warning("PaddleOCR 执行返回非零码 %s: %s", res.returncode, res.stderr[-6000:])
             return []
 
         for line in res.stdout.splitlines():
