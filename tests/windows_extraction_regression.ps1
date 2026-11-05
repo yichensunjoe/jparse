@@ -58,8 +58,10 @@ try {
     $file = [IO.FileStream]::new($LockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     $file.Dispose()
     if ($Expected -eq 'locked') { exit 1 } else { exit 0 }
-} catch [IO.IOException] {
-    if ($Expected -eq 'locked') { exit 0 } else { exit 1 }
+} catch {
+    $errorObject = $_.Exception
+    while ($errorObject.InnerException) { $errorObject = $errorObject.InnerException }
+    if ($Expected -eq 'locked' -and $errorObject -is [IO.IOException]) { exit 0 } else { exit 1 }
 }
 '@ | Set-Content -LiteralPath $worker -Encoding utf8
     $pwsh = (Get-Process -Id $PID).Path

@@ -93,22 +93,15 @@ internal static class JParseLauncher
             // which still enforce the traditional MAX_PATH limit.
             string runtimes = Path.Combine(baseDir, "r");
             Directory.CreateDirectory(runtimes);
-            using (Mutex gate = new Mutex(false, "Local\\JParse-" + key))
+            using (FileStream gate = AcquireRuntimeLock(runtimes, key))
             {
-                bool acquired = false;
-                try {
-                    try { acquired = gate.WaitOne(TimeSpan.FromMinutes(10)); }
-                    catch (AbandonedMutexException) { acquired = true; }
-                    if (!acquired) throw new IOException("等待 JParse 初始化超时。");
-                    runtime = FindReadyRuntime(runtimes, key);
-                    if (runtime == null) {
-                        runtime = FindIncompleteRuntime(runtimes, key);
-                        if (runtime == null)
-                            runtime = Path.Combine(runtimes, key.Substring(0, 12) + "-" + Guid.NewGuid().ToString("N").Substring(0, 8));
-                        ExtractRuntime(input, size, expectedHash, runtimes, runtime);
-                    }
+                runtime = FindReadyRuntime(runtimes, key);
+                if (runtime == null) {
+                    runtime = FindIncompleteRuntime(runtimes, key);
+                    if (runtime == null)
+                        runtime = Path.Combine(runtimes, key.Substring(0, 12) + "-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+                    ExtractRuntime(input, size, expectedHash, runtimes, runtime);
                 }
-                finally { if (acquired) gate.ReleaseMutex(); }
             }
         }
         string data = Environment.GetEnvironmentVariable("JPARSE_DATA_DIR");
@@ -139,6 +132,22 @@ internal static class JParseLauncher
         start.EnvironmentVariables["JAVA_HOME"] = Path.Combine(runtime, "jre");
         start.EnvironmentVariables["PATH"] = Path.Combine(runtime, "jre", "bin") + ";" + pythonDir + ";" + Environment.GetEnvironmentVariable("PATH");
         if (Process.Start(start) == null) throw new IOException("无法启动内置 Python。");
+    }
+
+    private static FileStream AcquireRuntimeLock(string parent, string key)
+    {
+        string path = Path.Combine(parent, ".lock-" + key);
+        Stopwatch wait = Stopwatch.StartNew();
+        while (true) {
+            try { return new FileStream(path, FileMode.OpenOrCreate, FileAccess.Write, FileShare.None); }
+            catch (IOException ex) {
+                int code = ex.HResult & 0xffff;
+                if (code != 32 && code != 33) throw;
+                if (wait.Elapsed >= TimeSpan.FromMinutes(10))
+                    throw new IOException("等待 JParse 初始化超时。", ex);
+                Thread.Sleep(200);
+            }
+        }
     }
 
     private static string FindReadyRuntime(string parent, string key)
