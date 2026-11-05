@@ -66,7 +66,9 @@ def main() -> None:
         "from pathlib import Path\nimport shutil, sys\n"
         "out = Path(sys.argv[1]); out.mkdir(parents=True, exist_ok=True)\n"
         "shutil.copy2(get_doclayout_onnx_model_path(), out / 'layout.onnx')\n"
-        "shutil.copy2(get_font_and_metadata('SourceHanSerifCN-Regular.ttf')[0], out / 'SourceHanSerifCN-Regular.ttf')\n",
+        "for name in ('SourceHanSerifCN-Regular.ttf', 'SourceHanSerifCN-Bold.ttf', "
+        "'SourceHanSansCN-Regular.ttf', 'SourceHanSansCN-Bold.ttf'):\n"
+        "    shutil.copy2(get_font_and_metadata(name)[0], out / name)\n",
         encoding="utf-8",
     )
     run(str(python_dir / "python.exe"), str(helper), str(RUNTIME / "models"))

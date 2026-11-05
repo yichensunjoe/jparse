@@ -35,7 +35,8 @@ jobs:
           $env:NO_PROXY = '127.0.0.1,localhost'
           $env:no_proxy = '127.0.0.1,localhost'
           $exe = Join-Path $PWD 'dist/JParse-Windows-x64.exe'
-          $proc = Start-Process -FilePath $exe -ArgumentList '--server-only','18765' -PassThru -Wait
+          $proc = Start-Process -FilePath $exe -ArgumentList '--server-only','18765' -PassThru
+          if (!$proc.WaitForExit(600000)) { throw 'EXE extraction timed out' }
           if ($proc.ExitCode -ne 0) { throw "EXE launcher exited $($proc.ExitCode)" }
           $deadline = (Get-Date).AddMinutes(3)
           do {
@@ -56,6 +57,22 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw 'Windows unit tests failed' }
           & $python scripts/windows_exe_smoke.py --project (Join-Path $runtime.FullName 'project') --port 18765
           if ($LASTEXITCODE -ne 0) { throw 'Windows PDF smoke test failed' }
+          # Exercise the actual no-argument, double-click launch path too.
+          $gui = Start-Process -FilePath $exe -PassThru
+          $deadline = (Get-Date).AddSeconds(90)
+          $guiHealthy = $false
+          $browserStarted = $false
+          do {
+            try {
+              $guiHealthy = (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/api/tasks -TimeoutSec 2).StatusCode -eq 200
+            } catch { }
+            $browserStarted = [bool](Get-CimInstance Win32_Process -Filter "Name='msedge.exe' OR Name='chrome.exe'" |
+              Where-Object { $_.CommandLine -like '*--app=http://127.0.0.1:8765*' } | Select-Object -First 1)
+            if ($guiHealthy -and $browserStarted) { break }
+            Start-Sleep -Seconds 2
+          } while ((Get-Date) -lt $deadline)
+          if (!$guiHealthy -or !$browserStarted) { throw 'Double-click launch did not start both the backend and browser app window' }
+          Write-Host 'Double-click launch started the backend and browser app window'
       - name: Upload Windows executable
         if: success()
         uses: actions/upload-artifact@v4

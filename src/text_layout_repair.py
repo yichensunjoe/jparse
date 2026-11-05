@@ -27,10 +27,11 @@ import unicodedata
 import fitz
 
 from src.translator import normalize_chinese_text
+from src.runtime_paths import font_directory
 
 logger = logging.getLogger("text_layout_repair")
 
-_FONT_DIR = Path.home() / ".cache/babeldoc/fonts"
+_FONT_DIR = font_directory()
 _REGULAR_FONT = _FONT_DIR / "SourceHanSerifCN-Regular.ttf"
 _BOLD_FONT = _FONT_DIR / "SourceHanSerifCN-Bold.ttf"
 

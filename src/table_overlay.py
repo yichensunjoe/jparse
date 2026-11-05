@@ -21,10 +21,11 @@ from typing import Dict, List, Optional, Tuple
 import fitz
 
 from src.opendataloader_extractor import ExtractedDocument, extract_pdf_structure
+from src.runtime_paths import font_directory
 
 logger = logging.getLogger("table_overlay")
 
-_FONT_DIR = Path.home() / ".cache/babeldoc/fonts"
+_FONT_DIR = font_directory()
 _REGULAR_FONT = _FONT_DIR / "SourceHanSerifCN-Regular.ttf"
 _BOLD_FONT = _FONT_DIR / "SourceHanSerifCN-Bold.ttf"
 

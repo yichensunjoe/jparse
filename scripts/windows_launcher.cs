@@ -113,6 +113,7 @@ internal static class JParseLauncher
         start.EnvironmentVariables["JPARSE_DATA_DIR"] = data;
         start.EnvironmentVariables["JPARSE_BUNDLED_PYTHON"] = Path.Combine(pythonDir, "python.exe");
         start.EnvironmentVariables["JPARSE_LAYOUT_MODEL"] = Path.Combine(runtime, "models", "layout.onnx");
+        start.EnvironmentVariables["JPARSE_FONT_DIR"] = Path.Combine(runtime, "models");
         start.EnvironmentVariables["NOTO_FONT_PATH"] = Path.Combine(runtime, "models", "SourceHanSerifCN-Regular.ttf");
         start.EnvironmentVariables["PYTHONUTF8"] = "1";
         start.EnvironmentVariables["JAVA_HOME"] = Path.Combine(runtime, "jre");
@@ -128,7 +129,10 @@ internal static class JParseLauncher
             File.Exists(Path.Combine(dir, "project", "src", "desktop_app_windows.py")) &&
             File.Exists(Path.Combine(dir, "jre", "bin", "java.exe")) &&
             File.Exists(Path.Combine(dir, "models", "layout.onnx")) &&
-            File.Exists(Path.Combine(dir, "models", "SourceHanSerifCN-Regular.ttf"));
+            File.Exists(Path.Combine(dir, "models", "SourceHanSerifCN-Regular.ttf")) &&
+            File.Exists(Path.Combine(dir, "models", "SourceHanSerifCN-Bold.ttf")) &&
+            File.Exists(Path.Combine(dir, "models", "SourceHanSansCN-Regular.ttf")) &&
+            File.Exists(Path.Combine(dir, "models", "SourceHanSansCN-Bold.ttf"));
     }
 
     private static void ExtractRuntime(FileStream input, long size, byte[] expectedHash, string parent, string destination)

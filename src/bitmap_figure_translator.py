@@ -35,10 +35,11 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import fitz
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
+from src.runtime_paths import font_directory
 
 logger = logging.getLogger("bitmap_figure_translator")
 
-_FONT_DIR = Path.home() / ".cache/babeldoc/fonts"
+_FONT_DIR = font_directory()
 _SANS_REGULAR = _FONT_DIR / "SourceHanSansCN-Regular.ttf"
 _SANS_BOLD = _FONT_DIR / "SourceHanSansCN-Bold.ttf"
 

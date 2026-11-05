@@ -12,6 +12,13 @@ from src import desktop_app_windows, vector_pdf_renderer, web_app
 
 
 class PortableRuntimeTests(unittest.TestCase):
+    def test_packaged_fonts_are_resolved_from_bundled_directory(self):
+        from src.runtime_paths import font_directory
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch.dict(os.environ, {"JPARSE_FONT_DIR": tmp}):
+                self.assertEqual(font_directory(), Path(tmp))
+
     def test_packaged_data_is_kept_in_configured_user_directory(self):
         with tempfile.TemporaryDirectory(prefix="jparse data ") as tmp:
             with patch.dict(os.environ, {"JPARSE_DATA_DIR": tmp}):
