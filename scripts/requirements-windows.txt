@@ -2,3 +2,7 @@
 pdf2zh==1.9.11
 babeldoc==0.2.33
 opendataloader-pdf==2.5.15
+# pdf2zh 1.9.11 imports these SDK models at startup even for Bing/Google.
+# Newer TMT releases removed TextTranslateRequest.
+tencentcloud-sdk-python-tmt==3.0.1478
+tencentcloud-sdk-python-common==3.1.193

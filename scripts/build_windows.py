@@ -71,6 +71,10 @@ def main() -> None:
     run(sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--no-compile",
         "--target", str(ocr_python_dir / "Lib" / "site-packages"),
         "-r", str(ROOT / "scripts" / "requirements-windows-ocr.txt"))
+    run(str(python_dir / "python.exe"), "-X", "utf8", "-c",
+        "from pdf2zh.pdf2zh import main; "
+        "from tencentcloud.tmt.v20180321.models import TextTranslateRequest; "
+        "print('Bundled pdf2zh imports verified')")
     project = RUNTIME / "project"
     project.mkdir()
     shutil.copytree(ROOT / "src", project / "src", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
