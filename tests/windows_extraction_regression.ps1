@@ -43,6 +43,35 @@ try {
     catch { $moveDenied = $true }
     if (!$moveDenied) { throw 'Test ACL did not deny directory renaming' }
 
+    # Windows file-share locks are enforced across processes and sessions.
+    $lockMethod = $type.GetMethod('AcquireRuntimeLock', [Reflection.BindingFlags]'NonPublic,Static')
+    if (!$lockMethod) { throw 'AcquireRuntimeLock not found' }
+    $lockKey = 'a' * 64
+    $lockArgs = [object[]]::new(2)
+    $lockArgs[0] = [string]$parent
+    $lockArgs[1] = [string]$lockKey
+    $held = $lockMethod.Invoke($null, $lockArgs)
+    $worker = Join-Path $root 'lock-worker.ps1'
+    @'
+param([string]$LockPath, [string]$Expected)
+try {
+    $file = [IO.FileStream]::new($LockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
+    $file.Dispose()
+    if ($Expected -eq 'locked') { exit 1 } else { exit 0 }
+} catch [IO.IOException] {
+    if ($Expected -eq 'locked') { exit 0 } else { exit 1 }
+}
+'@ | Set-Content -LiteralPath $worker -Encoding utf8
+    $pwsh = (Get-Process -Id $PID).Path
+    $lockPath = Join-Path $parent ('.lock-' + $lockKey)
+    try {
+        & $pwsh -NoProfile -NonInteractive -File $worker $lockPath 'locked'
+        if ($LASTEXITCODE -ne 0) { throw 'A second process obtained a held runtime lock' }
+    } finally { $held.Dispose() }
+    & $pwsh -NoProfile -NonInteractive -File $worker $lockPath 'free'
+    if ($LASTEXITCODE -ne 0) { throw 'Runtime lock was not released' }
+    Write-Host 'Runtime file lock excludes other processes and releases correctly'
+
     function New-TestPayload([string]$name, [bool]$invalid) {
         $zipPath = Join-Path $root ($name + '.zip')
         $zip = [IO.Compression.ZipFile]::Open($zipPath, [IO.Compression.ZipArchiveMode]::Create)
