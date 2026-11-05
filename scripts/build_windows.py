@@ -110,7 +110,10 @@ def main() -> None:
     payload = BUILD / "runtime.zip"
     with zipfile.ZipFile(payload, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=5, allowZip64=True) as archive:
         for path in sorted(RUNTIME.rglob("*")):
-            if path.is_file():
+            # Bootstrapping third-party models can create machine-specific
+            # bytecode caches. Source files are bundled and Python recreates
+            # caches as needed; omitting them also reduces legacy path lengths.
+            if path.is_file() and "__pycache__" not in path.parts and path.suffix not in {".pyc", ".pyo"}:
                 archive.write(path, path.relative_to(RUNTIME).as_posix())
     compiler = Path(os.environ["WINDIR"]) / "Microsoft.NET/Framework64/v4.0.30319/csc.exe"
     stub = BUILD / "launcher.exe"

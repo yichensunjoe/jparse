@@ -91,13 +91,13 @@ try {
 
     $payload = New-TestPayload 'valid' $false
     $expected = [BitConverter]::ToString($payload.Hash).Replace('-', '').ToLowerInvariant()
-    $destination = Join-Path $parent ($expected.Substring(0, 24) + '-1234abcd')
+    $destination = Join-Path $parent ($expected.Substring(0, 12) + '-1234abcd')
     Invoke-Extraction $payload $destination
     $actual = [IO.File]::ReadAllText((Join-Path $destination '.complete')).Trim()
     if ($actual -ne $expected) { throw 'Completion marker does not identify the exact payload' }
     Write-Host 'Extraction succeeded without directory delete permission'
 
-    $incomplete = Join-Path $parent ($expected.Substring(0, 24) + '-incomplete')
+    $incomplete = Join-Path $parent ($expected.Substring(0, 12) + '-incomplete')
     New-Item -ItemType Directory -Path $incomplete | Out-Null
     $findReady = $type.GetMethod('FindReadyRuntime', [Reflection.BindingFlags]'NonPublic,Static')
     if (!$findReady) { throw 'FindReadyRuntime not found' }
@@ -111,7 +111,7 @@ try {
 
     $resumePayload = New-TestPayload 'resume' $false
     $resumeKey = [BitConverter]::ToString($resumePayload.Hash).Replace('-', '').ToLowerInvariant()
-    $resumeDestination = Join-Path $parent ($resumeKey.Substring(0, 24) + '-resume01')
+    $resumeDestination = Join-Path $parent ($resumeKey.Substring(0, 12) + '-resume01')
     New-Item -ItemType Directory -Path (Join-Path $resumeDestination 'python') -Force | Out-Null
     [IO.File]::WriteAllText((Join-Path $resumeDestination '.payload'), $resumeKey)
     [IO.File]::WriteAllText((Join-Path $resumeDestination 'python/python.exe'), 'truncated')
@@ -140,7 +140,7 @@ try {
     if ($actualError -isnot [IO.InvalidDataException]) {
         throw "Original invalid-archive error was masked by cleanup: $actualError"
     }
-    Write-Host 'Original extraction error was preserved when cleanup failed'
+    Write-Host 'Original extraction error was preserved'
 } finally {
     if (Test-Path $parent) {
         try { Set-Acl -LiteralPath $parent -AclObject $originalAcl } catch { }

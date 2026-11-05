@@ -102,7 +102,9 @@ internal static class JParseLauncher
                     if (!acquired) throw new IOException("等待 JParse 初始化超时。");
                     runtime = FindReadyRuntime(runtimes, key);
                     if (runtime == null) {
-                        runtime = Path.Combine(runtimes, key.Substring(0, 24) + "-" + Guid.NewGuid().ToString("N").Substring(0, 8));
+                        runtime = FindIncompleteRuntime(runtimes, key);
+                        if (runtime == null)
+                            runtime = Path.Combine(runtimes, key.Substring(0, 12) + "-" + Guid.NewGuid().ToString("N").Substring(0, 8));
                         ExtractRuntime(input, size, expectedHash, runtimes, runtime);
                     }
                 }
@@ -141,9 +143,24 @@ internal static class JParseLauncher
 
     private static string FindReadyRuntime(string parent, string key)
     {
-        string prefix = key.Substring(0, 24) + "-";
+        string prefix = key.Substring(0, 12) + "-";
         foreach (string candidate in Directory.GetDirectories(parent, prefix + "*")) {
             try { if (RuntimeReady(candidate, key)) return candidate; }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+        return null;
+    }
+
+    private static string FindIncompleteRuntime(string parent, string key)
+    {
+        string prefix = key.Substring(0, 12) + "-";
+        foreach (string candidate in Directory.GetDirectories(parent, prefix + "*")) {
+            try {
+                string payload = Path.Combine(candidate, ".payload");
+                if (File.Exists(payload) && String.Equals(File.ReadAllText(payload).Trim(), key, StringComparison.OrdinalIgnoreCase)
+                    && !RuntimeReady(candidate, key)) return candidate;
+            }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
         }
@@ -153,7 +170,9 @@ internal static class JParseLauncher
     private static bool RuntimeReady(string dir, string key)
     {
         string marker = Path.Combine(dir, ".complete");
-        return File.Exists(marker) && String.Equals(File.ReadAllText(marker).Trim(), key, StringComparison.OrdinalIgnoreCase) &&
+        string payload = Path.Combine(dir, ".payload");
+        return File.Exists(payload) && String.Equals(File.ReadAllText(payload).Trim(), key, StringComparison.OrdinalIgnoreCase) &&
+            File.Exists(marker) && String.Equals(File.ReadAllText(marker).Trim(), key, StringComparison.OrdinalIgnoreCase) &&
             File.Exists(Path.Combine(dir, "python", "python.exe")) &&
             File.Exists(Path.Combine(dir, "python", "pythonw.exe")) &&
             File.Exists(Path.Combine(dir, "ocr-python", "python.exe")) &&
@@ -171,10 +190,23 @@ internal static class JParseLauncher
     {
         string stage = "创建运行目录";
         bool created = false;
+        bool payloadMarked = false;
         try {
-            if (Directory.Exists(destination)) throw new IOException("运行目录已存在：" + destination);
-            Directory.CreateDirectory(destination);
-            created = true;
+            string key = BitConverter.ToString(expectedHash).Replace("-", "").ToLowerInvariant();
+            string payloadMarker = Path.Combine(destination, ".payload");
+            if (Directory.Exists(destination)) {
+                if (!File.Exists(payloadMarker) || !String.Equals(File.ReadAllText(payloadMarker).Trim(), key, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException("运行目录与当前程序包不匹配。");
+                payloadMarked = true;
+            } else {
+                Directory.CreateDirectory(destination);
+                created = true;
+                File.WriteAllText(payloadMarker, key);
+                payloadMarked = true;
+            }
+            // A restarted extraction must never appear complete until every
+            // bundled file has been written again.
+            File.WriteAllText(Path.Combine(destination, ".complete"), "incomplete");
             input.Seek(-TrailerSize - size, SeekOrigin.End);
             long payloadOffset = input.Position;
             stage = "校验程序包";
@@ -201,17 +233,19 @@ internal static class JParseLauncher
                         throw new InvalidDataException("程序包含无效路径。");
                     if (String.IsNullOrEmpty(entry.Name)) { Directory.CreateDirectory(target); continue; }
                     Directory.CreateDirectory(Path.GetDirectoryName(target));
-                    entry.ExtractToFile(target);
+                    entry.ExtractToFile(target, true);
                 }
             }
             stage = "确认运行环境";
-            string key = BitConverter.ToString(expectedHash).Replace("-", "").ToLowerInvariant();
             File.WriteAllText(Path.Combine(destination, ".complete"), key);
             if (!RuntimeReady(destination, key)) throw new InvalidDataException("程序包缺少必要组件。");
         }
         catch (Exception ex) {
             ex.Data["JParseStage"] = stage;
-            if (created) {
+            // Keep marked partial data for the next launch to overwrite and
+            // reuse. This avoids requiring directory-delete permission and
+            // prevents repeated failures from consuming another 2 GB each.
+            if (created && !payloadMarked) {
                 try { Directory.Delete(destination, true); }
                 catch (Exception cleanup) { ex.Data["JParseCleanupFailure"] = cleanup.Message; }
             }
