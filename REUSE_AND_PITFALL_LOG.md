@@ -4,6 +4,19 @@
 
 规则：执行任务前先读本文件；任务完成后**双写**——先追加本文件，再同步追加总库（见 AGENTS.md）。
 
+## 2026-11-05 · 清理 Windows 安装包产物与下线 GitHub Release（P052-LiteParse-PDF自动识别）
+
+- 场景：用户要求删除关于 Windows 安装包的内容（不希望保留 release zip 二进制包与 GitHub Release 资产）。
+- 做法：
+  ① GitHub Release 彻底下线：使用 `gh release delete v2.1.0 --yes --cleanup-tag` 一键删除线上 Release 页面并自动清理远端 git tag，避免产生游离标签；
+  ② 本地打包产物清理：彻底删除本地 `release/` 目录（`JParse-Windows-v2.1.0.zip`、`JParse-macOS-v2.1.0.zip`）、交付目录 `outbox/` 中的对应 zip 包、临时构建目录 `build/package_staging/` 以及打包脚本 `scripts/package_release.py`；
+  ③ 范围明确与安全边界：明确区分“安装包发布介质（zip / Release）”与“核心跨平台代码兼容性（`msvcrt` 文件锁、进程控制、Edge 打印适配）”，保留基础 cross-platform 适配与双击批处理脚本，避免破坏代码库本身的通用性与健全性；
+  ④ 回归验证：全量 305/305 单元测试通过，工作区配置干净。
+- 踩坑点：
+  - `gh release delete` 默认不会删除关联的 git tag，若不加 `--cleanup-tag`，远端仍会保留该 tag 导致后续重构或查看 tag 时产生歧义，必须显式带上 `--cleanup-tag`。
+- 验证：`gh release list` 显示 0 release，本地 `git tag` 仅剩 baseline 标签，305/305 单测全绿。
+- 适用场景：开源/双平台项目中根据用户需求下线发布版本、回收资产包并保持代码库整洁。
+
 ## 2026-11-04 · 自动化发布打包与 GitHub Release 资产分发（P052-LiteParse-PDF自动识别）
 
 - 场景：用户询问 Windows 安装包具体位置，需要开箱即用的独立发布归档与在线下载地址。

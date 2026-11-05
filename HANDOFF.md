@@ -2,14 +2,14 @@
 
 > 交接文档：每次开新会话先读本文件。更新规则见 `AGENTS.md`「HANDOFF 交接规则」。
 
-## 当前状态（2026-11-04）
+## 当前状态（2026-11-05）
 
-- **Windows 与 macOS 双平台安装包与 Release 正式发布（2026-11-04）**：编写 `scripts/package_release.py`，全自动构建并交付独立便携安装包：Windows 安装包 `release/JParse-Windows-v2.1.0.zip`（9.49 MB，已同步交付至 `outbox/`）与 macOS 安装包 `release/JParse-macOS-v2.1.0.zip`（0.83 MB）。通过 GitHub CLI 发布官方公开 Release `v2.1.0`（包含两大平台下载资产），在线链接：`https://github.com/yichensunjoe/jparse/releases/tag/v2.1.0`。
-- **开源公开与 Windows 全套完整版交付（2026-11-04）**：GitHub 仓库已设置并验证为 PUBLIC 开放（`yichensunjoe/jparse`）；全面完成 Windows 深度跨平台兼容（`watcher` msvcrt 文件锁、`manage` 跨平台进程守护与安全信号、`web_app` 跨平台文件管理与浏览器唤起、Edge/Chrome 原生 Chromium 发现、Windows 虚拟环境路径适配）。新增 `src/desktop_app_windows.py` 提供独立无边框桌面视窗；提供 `启动JParse桌面应用(无黑框).vbs`（静默拉起，彻底无黑框干扰）与 9 个配套 `.bat` 批处理；编写详尽 `README_WINDOWS.md` 并更新 `README.md`。新增 Windows 专项测试，全量 305/305 单元测试全绿（24.9s）。
-- **全栈重命名为 JParse（2026-11-03）**：已完成品牌升级。GitHub 远程仓库重命名为 `yichensunjoe/jparse`（`git remote` 同步更新）；macOS 原生桌面应用重构并打包为 `JParse.app`（2.4 MB，ad-hoc 签名，送入 `outbox/JParse.app`）；启动脚本命名为 `启动JParse桌面应用.command`；Web 工作台与文档全面更新为 JParse；本地项目目录严格保留 `P052-LiteParse-PDF自动识别` 不变。
-- **下一步**：用户可直接通过本地 `outbox/`、`release/` 或 GitHub Release 页面下载使用。
+- **清理 Windows 安装包发布文件与 Release（2026-11-05）**：按用户指令彻底删除 Windows 安装包相关产物。已通过 `gh release delete v2.1.0 --yes --cleanup-tag` 彻底删除 GitHub Release `v2.1.0` 及其远端 tag；本地清理 `release/` 目录、`outbox/` 中的 `.zip` 安装包、`build/package_staging/` 及打包脚本 `scripts/package_release.py`。
+- **跨平台 Windows 源码与批处理脚本保留**：保留底层跨平台兼容机制（文件锁、进程管理、浏览器唤起）以及仓库内的常用双击批处理脚本。全量 305/305 单元测试全绿通过。
+- **下一步**：根据用户进一步需求决定是否继续使用或调整其他模块。
 
 ## 近期轮次（最新在上，保留全部）
+- 2026-11-05（清理 Windows 安装包产物与 GitHub Release）：响应用户要求删除关于 Windows 安装包的内容。通过 gh release delete 彻底下线 GitHub Release v2.1.0 及 tag；清理本地 release/ 与 outbox/ 中的 zip 包，移除打包脚本与 staging；全量 305/305 单测保持全绿。下一步：日常使用。
 - 2026-11-04（Windows 与 macOS 安装包打包及 GitHub Release v2.1.0 发布）：新增 scripts/package_release.py 自动将全套 Windows 批处理/静默启动器/源码/文档及使用说明打包为 JParse-Windows-v2.1.0.zip（9.49 MB），同步产出 macOS JParse-macOS-v2.1.0.zip；两个安装包均已保存在本地 release/ 与 outbox/ 目录下，并已发布至 GitHub Release (tag v2.1.0)。下一步：用户可直接通过本地或 GitHub 下载安装包。
 - 2026-11-04（仓库开源公开与 Windows 完整版交付）：将 GitHub 仓库 yichensunjoe/jparse 切换为 PUBLIC 公开；完成底层跨平台治理（fcntl/msvcrt 文件锁、win32 进程/信号/路径处理、Edge/Chrome 打印探测、venv 兼容）；实现 Windows 桌面视窗（src/desktop_app_windows.py）与无黑框静默启动器（.vbs）及全套 .bat 脚本；交付 README_WINDOWS.md，新增 Windows 专项测试，全量 305/305 单测全绿。下一步：推送代码至远端 main。
 - 2026-11-03（全栈重命名为 JParse）：根据用户要求将项目整体命名为 JParse，覆盖 GitHub 远程私有仓库（yichensunjoe/jparse）、macOS 桌面端（JParse.app）、Web 交互工作台（JParse 交互式工作台）、文档及桌面启动脚本（启动JParse桌面应用.command），严格保留本地项目文件夹路径不变。清理旧应用并重新编译打包 JParse.app（2.4M，零警告），全量 293/293 单元测试全绿，代码已提交并推送到远端 main 分支。下一步：双击启动脚本或 JParse.app 即可使用。
