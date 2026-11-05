@@ -4,7 +4,7 @@
 
 ## 当前状态（2026-11-05）
 
-- 已完成：Windows x64 单文件 EXE，内置 Python、Java、版面/字体和 PaddleOCR；用户数据位于 `%LOCALAPPDATA%\JParse\data`，本地成品在 `dist/JParse-Windows-x64.exe`。
+- 已完成：Windows x64 单文件 EXE，内置 Python、Java、版面/字体和 PaddleOCR；用户数据位于 `%LOCALAPPDATA%\JParse\data`，本地成品在 `outbox/JParse-Windows-x64.exe`，`dist/` 保留已校验下载副本。
 - 已验证：主分支 CI 41960426028 成功；Windows 43 项测试、双击启动、离线位图 OCR、在线 PDF 翻译、中文文件名投递及失败归档通过；本机 336 项单测通过。
 - 交付：代码已推送主分支；Actions 构件保留 30 天，EXE 未做商业签名。Mac 客户端已为共享设置接口重编译，旧版保留在 `build/`。
 - 限制与下一步：无可用正文文字层的纯扫描页会明确失败并保留原件；整页扫描 OCR 翻译尚未完成。Bing/Google 翻译需要联网。
