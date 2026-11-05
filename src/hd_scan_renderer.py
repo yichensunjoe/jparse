@@ -350,13 +350,15 @@ class ScannedPDFTranslator:
     def __init__(self, service: str = "bing", model_dir: Optional[Path] = None):
         self.service = service.lower()
         self.model_dir = model_dir or (_ROOT / "assets/models/translation")
-        self._bing_translator = None
+        self._online_translator = None
         self._ct2_engine = None
         self._cache: Dict[str, str] = {}
 
-    def _get_bing_translator(self):
-        if self._bing_translator is not None:
-            return self._bing_translator
+    def _get_online_translator(self):
+        if self._online_translator is not None:
+            return self._online_translator
+        if self.service not in {"bing", "google"}:
+            raise RuntimeError("扫描 PDF 不支持翻译服务：%s" % self.service)
 
         ensure_pdf2zh_environment_ready()
         cand_venvs = [
@@ -370,12 +372,12 @@ class ScannedPDFTranslator:
                 break
 
         try:
-            from pdf2zh.translator import BingTranslator
-            self._bing_translator = BingTranslator(lang_in="en", lang_out="zh", model="")
-            return self._bing_translator
+            from pdf2zh.translator import BingTranslator, GoogleTranslator
+            cls = BingTranslator if self.service == "bing" else GoogleTranslator
+            self._online_translator = cls(lang_in="en", lang_out="zh", model="")
+            return self._online_translator
         except Exception as e:
-            logger.warning("无法初始化 BingTranslator (%s)，降级为本地离线引擎", e)
-            return None
+            raise RuntimeError("无法初始化 %s 翻译服务：%s" % (self.service, e)) from e
 
     def _get_ct2_engine(self) -> TranslationEngine:
         if self._ct2_engine is None:
@@ -416,22 +418,16 @@ class ScannedPDFTranslator:
             self._cache[text] = res
             return res
 
-        translated = ""
-        if self.service == "bing":
-            bt = self._get_bing_translator()
-            if bt:
-                try:
-                    chunks = split_into_chunks(cleaned, max_len=750)
-                    tr_chunks = []
-                    for chunk in chunks:
-                        tr_chunk = bt.translate(chunk)
-                        tr_chunks.append(tr_chunk)
-                    translated = smart_join_translated(tr_chunks)
-                except Exception as exc:
-                    logger.warning("Bing 翻译失败 (%s)，使用本地离线模型回退: %s", exc, cleaned[:40])
-                    translated = ""
-
-        if not translated:
+        if self.service in {"bing", "google"}:
+            try:
+                online = self._get_online_translator()
+                chunks = split_into_chunks(cleaned, max_len=750)
+                translated = smart_join_translated([online.translate(chunk) for chunk in chunks])
+                if not translated.strip():
+                    raise ValueError("翻译服务返回空结果")
+            except Exception as exc:
+                raise RuntimeError("%s 翻译失败：%s" % (self.service, exc)) from exc
+        elif self.service in {"offline", "local"}:
             engine = self._get_ct2_engine()
             try:
                 from src.translator import split_sentences
@@ -443,8 +439,9 @@ class ScannedPDFTranslator:
                 ).strip()
                 translated = joined
             except Exception as e:
-                logger.error("本地离线翻译失败: %s", e)
-                translated = cleaned
+                raise RuntimeError("本地离线翻译失败: %s" % e) from e
+        else:
+            raise RuntimeError("不支持的翻译服务：%s" % self.service)
 
         translated = normalize_chinese_text(translated)
         translated = self.apply_domain_glossary(translated)
@@ -943,6 +940,29 @@ def create_dual_interleaved_pdf(
     return output_dual_pdf_path
 
 
+def ensure_scanned_pages_have_text(pdf_path: Path, extracted: ExtractedDocument) -> None:
+    """Do not publish blank translated pages when a scan has no OCR text."""
+    if fitz is None:
+        raise RuntimeError("无法检查扫描 PDF：缺少 PyMuPDF")
+    if not extracted.pages:
+        raise RuntimeError("扫描 PDF 未提取到任何页面文字，无法生成可靠的译文。")
+    with fitz.open(str(pdf_path)) as original:
+        for page in extracted.pages:
+            index = page.page_num - 1
+            if not 0 <= index < len(original):
+                raise RuntimeError("扫描 PDF 页码无效：%s" % page.page_num)
+            source_page = original[index]
+            images = source_page.get_image_info()
+            body_text = " ".join(
+                (element.text or "").strip() for element in page.elements
+                if element.type.lower() not in {"figure", "image"}
+                and 0.15 * page.height <= element.y + element.h / 2 <= 0.85 * page.height
+            )
+            body_letters = sum(char.isalpha() for char in body_text)
+            if images and body_letters < 50:
+                raise RuntimeError("扫描 PDF 第 %d 页未识别出文字，无法生成可靠的译文。" % page.page_num)
+
+
 def process_scanned_pdf_to_hd_pdf(
     pdf_path: Union[str, Path],
     outbox_dir: Union[str, Path],
@@ -963,6 +983,7 @@ def process_scanned_pdf_to_hd_pdf(
 
     # 1. Structured Document Extraction via OpenDataLoader
     doc_res = extract_pdf_structure(pdf_path, pages=pages)
+    ensure_scanned_pages_have_text(pdf_path, doc_res)
 
     # 2. Extract and crop high-definition figures and unstructured tables per page
     page_figure_maps: Dict[int, Dict[int, Tuple[str, float]]] = {}

@@ -114,11 +114,12 @@ public struct SettingsView: View {
 
                         settingRow(
                             title: "翻译服务",
-                            detail: manager.selectedService == .google
-                                ? "Google 用于矢量正文；扫描件及表格、图中文字使用本地翻译。"
-                                : "在线翻译会发送提取的文字，原始 PDF 不上传。"
+                            detail: "在线翻译会发送提取的文字，原始 PDF 不上传。"
                         ) {
-                            Picker("翻译服务", selection: $manager.selectedService) {
+                            Picker("翻译服务", selection: Binding(
+                                get: { manager.selectedService },
+                                set: { manager.selectTranslationService($0) }
+                            )) {
                                 ForEach(TranslationService.allCases) { service in
                                     Text(service.shortTitle)
                                         .tag(service)

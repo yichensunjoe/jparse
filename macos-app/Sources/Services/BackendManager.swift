@@ -22,6 +22,9 @@ public final class BackendManager: ObservableObject {
 
     private var pollTimer: Timer?
     private var backendProcess: Process?
+    private var serviceUpdateTask: Task<Bool, Never>?
+    private var serviceUpdateRevision = 0
+    private var serviceUpdateInFlight = false
     private var lastSyncedOutputFolder: String?
     private var dismissedCompletedIDs: Set<String> = []
     public let serverPort: Int
@@ -101,6 +104,7 @@ public final class BackendManager: ObservableObject {
                 if let httpResp = response as? HTTPURLResponse, httpResp.statusCode == 200 {
                     if connectionStatus != .connected(port: serverPort) {
                         connectionStatus = .connected(port: serverPort)
+                        Task { await refreshTranslationService() }
                     }
                     // 输出目录只存在 App 的 UserDefaults 里；每次连上/重连后
                     // 都要重放给后台，后台重启也不会悄悄回到旧目录。
@@ -214,6 +218,7 @@ public final class BackendManager: ObservableObject {
                     // stays connected
                 } else {
                     self.connectionStatus = .connected(port: self.serverPort)
+                    Task { await self.refreshTranslationService() }
                 }
                 self.syncOutputFolderIfNeeded()
             } catch {
@@ -237,12 +242,36 @@ public final class BackendManager: ObservableObject {
         }
 
         let pipeline = selectedPipeline
-        let service = selectedService
         errorMessage = nil
         isUploading = true
         uploadStatusMessage = "正在添加 \(pdfs.count) 份文献…"
 
         Task {
+            var service: TranslationService
+            while true {
+                let revision = serviceUpdateRevision
+                if let pending = serviceUpdateTask, !(await pending.value) {
+                    self.isUploading = false
+                    self.errorMessage = "翻译服务设置未保存，请重试。"
+                    return
+                }
+                guard let configured = await fetchTranslationService() else {
+                    self.isUploading = false
+                    self.errorMessage = "无法读取翻译服务配置，请检查后台设置后重试。"
+                    return
+                }
+                if revision == serviceUpdateRevision {
+                    if selectedService != configured {
+                        selectedService = configured
+                        self.isUploading = false
+                        self.errorMessage = "翻译服务已在其他位置更改，请确认当前设置后重新导入。"
+                        return
+                    }
+                    service = configured
+                    break
+                }
+            }
+            self.selectedService = service
             var failures: [String] = []
             for (idx, pdfURL) in pdfs.enumerated() {
                 uploadStatusMessage = "正在添加 \(idx + 1)/\(pdfs.count)：\(pdfURL.lastPathComponent)"
@@ -256,6 +285,67 @@ public final class BackendManager: ObservableObject {
                 self.errorMessage = "已添加 \(pdfs.count - failures.count) 份，\(failures.count) 份未能添加：\n" + failures.joined(separator: "\n")
             }
             self.refreshTasks()
+        }
+    }
+
+    private func fetchTranslationService() async -> TranslationService? {
+        var request = URLRequest(url: serverBaseURL.appendingPathComponent("api/settings"))
+        request.timeoutInterval = 8.0
+        do {
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200,
+                  let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let raw = object["pdf2zh_service"] as? String else { return nil }
+            return TranslationService(rawValue: raw)
+        } catch {
+            return nil
+        }
+    }
+
+    private func refreshTranslationService() async {
+        let revision = serviceUpdateRevision
+        guard !serviceUpdateInFlight else { return }
+        if let service = await fetchTranslationService(),
+           revision == serviceUpdateRevision, !serviceUpdateInFlight {
+            selectedService = service
+        }
+    }
+
+    public func selectTranslationService(_ service: TranslationService) {
+        let previous = serviceUpdateTask
+        serviceUpdateRevision += 1
+        let revision = serviceUpdateRevision
+        serviceUpdateInFlight = true
+        serviceUpdateTask = Task {
+            _ = await previous?.value
+            if let reason = await syncTranslationService(service) {
+                errorMessage = "无法保存翻译服务设置：\(reason)"
+                if revision == serviceUpdateRevision { serviceUpdateInFlight = false }
+                return false
+            } else {
+                if revision == serviceUpdateRevision {
+                    selectedService = service
+                    serviceUpdateInFlight = false
+                }
+                return true
+            }
+        }
+    }
+
+    private func syncTranslationService(_ service: TranslationService) async -> String? {
+        var request = URLRequest(url: serverBaseURL.appendingPathComponent("api/settings"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.timeoutInterval = 8.0
+        do {
+            request.httpBody = try JSONSerialization.data(withJSONObject: ["pdf2zh_service": service.rawValue])
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse, http.statusCode == 200 else {
+                return "后台拒绝了翻译设置"
+            }
+            return nil
+        } catch {
+            return error.localizedDescription
         }
     }
 

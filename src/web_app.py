@@ -21,7 +21,6 @@ import threading
 import time
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qs, quote, unquote, urlparse
-from urllib.request import urlopen
 from http.server import HTTPServer, SimpleHTTPRequestHandler, ThreadingHTTPServer
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -29,6 +28,8 @@ if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
 from src.router import probe_pdf_document_type, route_and_process_pdf
+from src.runtime_paths import identity_matches, local_urlopen, mark_active_runtime
+from src.watcher import acquire_lock, release_lock
 
 logger = logging.getLogger("web_app")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
@@ -63,6 +64,105 @@ class ConversionTaskManager:
         self._lock = threading.Lock()
         self._executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="LiteParseWorker")
         self._subscribers: List[threading.Event] = []
+        self._inbox_observations: Dict[str, tuple] = {}
+        self._reservation_locks: Dict[str, Any] = {}
+
+    def scan_inbox_once(self, now: Optional[float] = None, settle_seconds: float = 5) -> None:
+        """Claim only stable PDFs, atomically isolating them from other watchers."""
+        runtime = os.environ.get("JPARSE_RUNTIME_ID")
+        if runtime:
+            try:
+                if (self.project_root / ".active-runtime").read_text(encoding="utf-8") != runtime:
+                    self._inbox_observations.clear()
+                    return
+            except OSError:
+                self._inbox_observations.clear()
+                return
+        now = time.monotonic() if now is None else now
+        visible = set()
+        for source in sorted(self.inbox_dir.iterdir()):
+            if source.name.startswith(".") or source.suffix.lower() != ".pdf" or source.is_symlink():
+                continue
+            try:
+                stat = source.stat()
+                if not source.is_file():
+                    continue
+            except OSError:
+                continue
+            key = str(source)
+            visible.add(key)
+            signature = (stat.st_size, stat.st_mtime_ns)
+            previous = self._inbox_observations.get(key)
+            if previous is None or previous[:2] != signature:
+                self._inbox_observations[key] = (*signature, now)
+                continue
+            if now - previous[2] < settle_seconds:
+                continue
+            service = self.configured_service()
+            stem = self.reserve_stem(source.stem)
+            claimed = self.processing_dir / (stem + ".pdf")
+            try:
+                os.replace(str(source), str(claimed))
+            except OSError as exc:
+                claimed.unlink(missing_ok=True)
+                self.release_reservation(stem)
+                logger.warning("无法认领投递箱文件 %s: %s", source.name, exc)
+            else:
+                if claimed.is_symlink():
+                    destination = self._unique_path(self.failed_dir, claimed.name)
+                    os.replace(str(claimed), str(destination))
+                    self.release_reservation(stem)
+                    logger.warning("已拒绝投递箱符号链接: %s", source.name)
+                else:
+                    self.add_file(claimed, source.name, options={"service": service})
+            self._inbox_observations.pop(key, None)
+        for key in set(self._inbox_observations) - visible:
+            self._inbox_observations.pop(key, None)
+
+    def configured_service(self) -> str:
+        """Read the explicitly selected default translation service."""
+        config_path = self.project_root / "config.json"
+        if not config_path.is_file():
+            config_path = _PROJECT_ROOT / "config.json"
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            if not isinstance(config, dict):
+                raise ValueError("配置不是对象")
+            service = config.get("pdf2zh_service", "bing")
+            if not isinstance(service, str) or not service.strip():
+                raise ValueError("翻译服务不能为空")
+            return service.strip()
+        except (OSError, ValueError) as exc:
+            raise RuntimeError("无法读取翻译配置: %s" % exc) from exc
+
+    def set_translation_service(self, service: str) -> None:
+        if not isinstance(service, str) or service not in {"bing", "google"}:
+            raise ValueError("翻译服务仅支持 bing 或 google")
+        target = self.project_root / "config.json"
+        source = target if target.exists() else _PROJECT_ROOT / "config.json"
+        with self._lock:
+            try:
+                config = json.loads(source.read_text(encoding="utf-8"))
+                if not isinstance(config, dict):
+                    raise ValueError("配置不是对象")
+                config["pdf2zh_service"] = service
+                stage = self.project_root / (".config-%d-%d.tmp" % (os.getpid(), time.time_ns()))
+                try:
+                    stage.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+                    os.replace(str(stage), str(target))
+                finally:
+                    stage.unlink(missing_ok=True)
+            except (OSError, ValueError) as exc:
+                raise ValueError("无法保存翻译配置：%s" % exc) from exc
+
+    def watch_inbox(self) -> None:
+        while True:
+            try:
+                self.recover_interrupted()
+                self.scan_inbox_once()
+            except Exception:
+                logger.exception("扫描投递箱失败")
+            time.sleep(2)
 
     def set_outbox_dir(self, raw_path: str) -> Path:
         """Switch the output directory for future tasks.
@@ -114,13 +214,62 @@ class ConversionTaskManager:
     def reserve_stem(self, original_stem: str) -> str:
         """Reserve a collision-free stem under processing/ so peers skip it too."""
         with self._lock:
-            stem = original_stem or "document"
+            base = original_stem or "document"
+            stem = base
             index = 2
-            while not self._stem_free(stem):
-                stem = "%s-%d" % (original_stem, index)
+            while True:
+                handle = None
+                if self._stem_free(stem):
+                    lock_path = self.processing_dir / (".%s.lock" % stem)
+                    if not lock_path.is_symlink():
+                        handle = acquire_lock(lock_path)
+                if handle is not None:
+                    try:
+                        (self.processing_dir / (stem + ".pdf")).touch(exist_ok=False)
+                    except FileExistsError:
+                        release_lock(handle)
+                    else:
+                        self._reservation_locks[stem] = handle
+                        return stem
+                stem = "%s-%d" % (base, index)
                 index += 1
-            (self.processing_dir / (stem + ".pdf")).touch(exist_ok=False)
-            return stem
+
+    def release_reservation(self, stem: str) -> None:
+        with self._lock:
+            handle = self._reservation_locks.pop(stem, None)
+        release_lock(handle)
+
+    def recover_interrupted(self) -> None:
+        """Move abandoned, lock-protected claims to failed/; never take live jobs."""
+        runtime = os.environ.get("JPARSE_RUNTIME_ID")
+        if runtime:
+            try:
+                if (self.project_root / ".active-runtime").read_text(encoding="utf-8") != runtime:
+                    return
+            except OSError:
+                return
+        for source in self.processing_dir.glob("*.pdf"):
+            if source.is_symlink():
+                continue
+            with self._lock:
+                if source.stem in self._reservation_locks:
+                    continue
+            lock_path = self.processing_dir / (".%s.lock" % source.stem)
+            if not lock_path.is_file() or lock_path.is_symlink():
+                continue  # It may belong to an older independent watcher.
+            handle = acquire_lock(lock_path)
+            if handle is None:
+                continue
+            try:
+                if source.is_file() and not source.is_symlink():
+                    destination = self._unique_path(self.failed_dir, source.name)
+                    os.replace(str(source), str(destination))
+                    destination.with_suffix(".error.txt").write_text(
+                        "处理被中断；原件已保留。请将 PDF 重新放入 inbox 后重试。\n", encoding="utf-8"
+                    )
+                    logger.warning("已保留中断任务的原件: %s", destination.name)
+            finally:
+                release_lock(handle)
 
     @staticmethod
     def _unique_path(directory: Path, filename: str) -> Path:
@@ -158,7 +307,11 @@ class ConversionTaskManager:
             self.tasks.insert(0, task)
             del self.tasks[200:]
         self._notify_subscribers()
-        self._executor.submit(self._run_task, task_id)
+        try:
+            self._executor.submit(self._run_task, task_id, file_path.stem)
+        except Exception:
+            self.release_reservation(file_path.stem)
+            raise
         return task
 
     def get_tasks(self) -> List[Dict[str, Any]]:
@@ -173,7 +326,13 @@ class ConversionTaskManager:
                     break
         self._notify_subscribers()
 
-    def _run_task(self, task_id: str):
+    def _run_task(self, task_id: str, reserved_stem: str):
+        try:
+            self._run_task_impl(task_id)
+        finally:
+            self.release_reservation(reserved_stem)
+
+    def _run_task_impl(self, task_id: str):
         task = None
         with self._lock:
             for t in self.tasks:
@@ -866,8 +1025,10 @@ INDEX_HTML = """<!DOCTYPE html>
         }
 
         async function uploadBatch(items) {
+            try { await serviceUpdate; } catch (err) { alert('无法保存翻译设置：' + err); return; }
             const pipelineMode = document.getElementById('pipelineMode').value;
             const service = document.getElementById('serviceEngine').value;
+            const failures = [];
 
             for (const item of items) {
                 const formData = new FormData();
@@ -877,16 +1038,39 @@ INDEX_HTML = """<!DOCTYPE html>
                 formData.append('service', service);
 
                 try {
-                    await fetch('/api/upload', {
+                    const response = await fetch('/api/upload', {
                         method: 'POST',
                         body: formData
                     });
+                    if (!response.ok) {
+                        const details = await response.json().catch(() => ({}));
+                        throw new Error(details.error || ('HTTP ' + response.status));
+                    }
                 } catch (err) {
                     console.error('上传失败:', err);
+                    failures.push(item.file.name + '：' + err.message);
                 }
             }
+            if (failures.length) alert('以下文件未能添加：\\n' + failures.join('\\n'));
             refreshTasks();
         }
+
+        const serviceSelect = document.getElementById('serviceEngine');
+        let serviceUpdate = fetch('/api/settings').then(r => {
+            if (!r.ok) throw new Error('读取配置失败');
+            return r.json();
+        }).then(data => { serviceSelect.value = data.pdf2zh_service; });
+        serviceSelect.addEventListener('change', () => {
+            const selected = serviceSelect.value;
+            serviceUpdate = serviceUpdate.catch(() => {}).then(async () => {
+                const response = await fetch('/api/settings', {
+                    method: 'POST', headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({pdf2zh_service: selected})
+                });
+                if (!response.ok) throw new Error('保存翻译配置失败');
+                serviceSelect.value = selected;
+            });
+        });
 
         async function refreshTasks() {
             try {
@@ -1070,10 +1254,16 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
             return
 
         if path == "/api/settings":
+            try:
+                configured_service = self.task_manager.configured_service()
+            except RuntimeError as exc:
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+                return
             self._send_json(
                 {
                     "outbox_dir": str(self.task_manager.outbox_dir),
                     "default_outbox_dir": str(self.task_manager.default_outbox_dir),
+                    "pdf2zh_service": configured_service,
                 }
             )
             return
@@ -1088,6 +1278,11 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
             self.send_header("X-Content-Type-Options", "nosniff")
             self.end_headers()
             self.wfile.write(data)
+            return
+
+        if path == "/api/identity":
+            self._send_json({"runtime_id": os.environ.get("JPARSE_RUNTIME_ID", ""),
+                             "data_dir": str(self.task_manager.project_root)})
             return
 
         if path == "/api/download":
@@ -1167,6 +1362,18 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
                 self.send_error(400, "Expected a JSON object")
                 return
 
+            if "pdf2zh_service" in payload:
+                if "outbox_dir" in payload:
+                    self._send_json({"ok": False, "error": "请分别修改输出目录与翻译服务"}, status=400)
+                    return
+                try:
+                    self.task_manager.set_translation_service(payload["pdf2zh_service"])
+                except ValueError as exc:
+                    self._send_json({"ok": False, "error": str(exc)}, status=400)
+                    return
+                self._send_json({"ok": True, "pdf2zh_service": self.task_manager.configured_service()})
+                return
+
             try:
                 target = self.task_manager.set_outbox_dir(payload.get("outbox_dir"))
             except ValueError as exc:
@@ -1212,7 +1419,7 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
             filename = None
             relative_path = ""
             pipeline_mode = "auto"
-            service = "bing"
+            service = None
 
             for part in parts:
                 if not part or part == b"--\r\n" or part == b"--" or part.startswith(b"--"):
@@ -1244,25 +1451,35 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
                 self.send_error(400, "No file uploaded")
                 return
 
+            try:
+                configured = self.task_manager.configured_service()
+            except RuntimeError as exc:
+                self._send_json({"ok": False, "error": str(exc)}, status=400)
+                return
+            if service and service != configured:
+                self._send_json({"ok": False, "error": "翻译设置已更改，请重新选择服务后重试"}, status=409)
+                return
+            service = configured
+
             if not filename.lower().endswith(".pdf"):
                 self.send_error(400, "Only PDF files supported")
                 return
 
-            # 投递即认领：直接落入 processing/，避开 watcher 的 inbox 扫描，
-            # 同一份 PDF 不会被两套管线同时处理；重名由 reserve_stem 发号。
+            # 先投递到 inbox 的隐藏文件，再原子认领到 processing；监控器忽略隐藏文件。
             safe_name = Path(filename).name
             if not safe_name or safe_name in {".", ".."}:
                 self.send_error(400, "Invalid filename")
                 return
             stem = self.task_manager.reserve_stem(Path(safe_name).stem)
             claimed = self.task_manager.processing_dir / (stem + ".pdf")
-            tmp_save = self.task_manager.processing_dir / (".%s.pdf.tmp" % stem)
+            tmp_save = self.task_manager.inbox_dir / (".%s.%s.pdf" % (stem, time.time_ns()))
             try:
                 tmp_save.write_bytes(file_bytes)
                 tmp_save.replace(claimed)
             except OSError:
                 tmp_save.unlink(missing_ok=True)
                 claimed.unlink(missing_ok=True)
+                self.task_manager.release_reservation(stem)
                 self.send_error(500, "Failed to store upload")
                 return
 
@@ -1294,8 +1511,9 @@ class LiteParseAppHandler(SimpleHTTPRequestHandler):
 def _instance_serving(port: int) -> bool:
     """True when a LiteParse workbench already answers on this loopback port."""
     try:
-        with urlopen("http://127.0.0.1:%d/api/tasks" % port, timeout=1.5) as response:
-            return response.status == 200
+        endpoint = "/api/identity" if os.environ.get("JPARSE_RUNTIME_ID") else "/api/tasks"
+        with local_urlopen("http://127.0.0.1:%d%s" % (port, endpoint), timeout=1.5) as response:
+            return response.status == 200 and (not os.environ.get("JPARSE_RUNTIME_ID") or identity_matches(json.load(response)))
     except Exception:
         return False
 
@@ -1317,6 +1535,9 @@ def run_server(port: int = 8765, open_browser: bool = True):
         )
         handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
         logging.getLogger().addHandler(handler)
+        config_path = project_root / "config.json"
+        if not config_path.exists():
+            shutil.copy2(_PROJECT_ROOT / "config.json", config_path)
     task_mgr = ConversionTaskManager(project_root=project_root)
     LiteParseAppHandler.task_manager = task_mgr
 
@@ -1332,6 +1553,13 @@ def run_server(port: int = 8765, open_browser: bool = True):
         raise SystemExit(1)
 
     url = f"http://127.0.0.1:{port}"
+    try:
+        mark_active_runtime(port)
+    except OSError:
+        httpd.server_close()
+        raise
+    if os.environ.get("JPARSE_WATCH_INBOX") == "1":
+        threading.Thread(target=task_mgr.watch_inbox, name="JParseInbox", daemon=True).start()
     print(f"🚀 LiteParse 交互式工作台已启动: {url}")
     print("📁 支持将单个 PDF 或整套文件夹拖拽至网页，直接识别并转换。")
 

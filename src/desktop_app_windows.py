@@ -12,6 +12,7 @@ from logging.handlers import RotatingFileHandler
 import os
 from pathlib import Path
 import shutil
+import socket
 import subprocess
 import sys
 import time
@@ -24,6 +25,33 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(me
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
+from src.runtime_paths import identity_matches, local_urlopen, mark_active_runtime, packaged_port
+from src.watcher import acquire_lock, release_lock
+
+
+def default_port() -> int:
+    return packaged_port()
+
+
+def port_available(port: int) -> bool:
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            probe.bind(("127.0.0.1", port))
+        return True
+    except OSError:
+        return False
+
+
+def saved_runtime_port() -> int | None:
+    runtime = os.environ.get("JPARSE_RUNTIME_ID")
+    data = os.environ.get("JPARSE_DATA_DIR")
+    if not runtime or not data:
+        return None
+    try:
+        value = int((Path(data) / (".port-" + runtime)).read_text(encoding="utf-8"))
+        return value if 1 <= value <= 65535 else None
+    except (OSError, ValueError):
+        return None
 
 
 def find_windows_app_browser() -> tuple[str, str]:
@@ -59,11 +87,12 @@ def find_windows_app_browser() -> tuple[str, str]:
 
 def is_backend_alive(port: int = 8765, timeout: float = 1.0) -> bool:
     """Check if JParse backend server is responding on 127.0.0.1:port."""
-    url = f"http://127.0.0.1:{port}/api/tasks"
+    endpoint = "/api/identity" if os.environ.get("JPARSE_RUNTIME_ID") else "/api/tasks"
+    url = f"http://127.0.0.1:{port}{endpoint}"
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "JParse-DesktopApp/2.1.0"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.status == 200
+        with local_urlopen(req, timeout=timeout) as resp:
+            return resp.status == 200 and (not os.environ.get("JPARSE_RUNTIME_ID") or identity_matches(json.load(resp)))
     except Exception:
         return False
 
@@ -135,22 +164,58 @@ def launch_desktop_window(port: int = 8765) -> None:
 
 
 def main() -> None:
-    port = 8765
+    port = default_port()
+    explicit_port = False
     for arg in sys.argv[1:]:
         if arg.isdigit():
             port = int(arg)
+            explicit_port = True
 
     if "--server-only" in sys.argv:
         from src.web_app import run_server
         run_server(port=port, open_browser=False)
         return
 
-    # 1. Check or start backend
-    if not is_backend_alive(port):
-        start_backend_server(port)
+    runtime = os.environ.get("JPARSE_RUNTIME_ID")
+    data = os.environ.get("JPARSE_DATA_DIR")
+    handle = None
+    selected = None
+    try:
+        if runtime and data:
+            root = Path(data)
+            root.mkdir(parents=True, exist_ok=True)
+            deadline = time.monotonic() + 60
+            while handle is None and time.monotonic() < deadline:
+                handle = acquire_lock(root / (".launch-" + runtime + ".lock"))
+                if handle is None:
+                    time.sleep(0.2)
+            if handle is None:
+                raise RuntimeError("等待 JParse 后台启动超时。")
 
-    # 2. Launch UI window
-    launch_desktop_window(port)
+        saved = saved_runtime_port() if not explicit_port else None
+        if saved is not None and is_backend_alive(saved):
+            selected = saved
+        else:
+            attempts = 20 if runtime and not explicit_port else 1
+            for offset in range(attempts):
+                candidate = 20000 + ((port - 20000 + offset) % 40000) if attempts > 1 else port
+                if not is_backend_alive(candidate):
+                    if not port_available(candidate):
+                        continue
+                    try:
+                        start_backend_server(candidate)
+                    except RuntimeError:
+                        if attempts > 1 and not port_available(candidate) and not is_backend_alive(candidate):
+                            continue
+                        raise
+                selected = candidate
+                break
+        if selected is None:
+            raise RuntimeError("无法找到可用端口启动 JParse。")
+        mark_active_runtime(selected)
+    finally:
+        release_lock(handle)
+    launch_desktop_window(selected)
 
 
 if __name__ == "__main__":

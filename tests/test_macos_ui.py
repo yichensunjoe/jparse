@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -17,6 +18,7 @@ ROOT = Path(__file__).resolve().parent.parent
 class TestMacOSUI(unittest.TestCase):
     def test_import_settings_errors_and_dismissed_tasks(self):
         uploads = []
+        settings = {"pdf2zh_service": "bing"}
         tasks = [{
             "id": "completed-1", "filename": "paper.pdf", "relative_path": "paper.pdf",
             "file_size": 42, "input_path": "/tmp/paper.pdf", "status": "completed",
@@ -26,14 +28,21 @@ class TestMacOSUI(unittest.TestCase):
 
         class Handler(BaseHTTPRequestHandler):
             def do_GET(self):
-                if self.path != "/api/tasks":
+                if self.path == "/api/tasks":
+                    self.respond(200, tasks)
+                elif self.path == "/api/settings":
+                    self.respond(200, settings)
+                else:
                     self.send_error(404)
-                    return
-                self.respond(200, tasks)
 
             def do_POST(self):
                 body = self.rfile.read(int(self.headers.get("Content-Length", "0")))
                 if self.path == "/api/settings":
+                    payload = json.loads(body)
+                    if "pdf2zh_service" in payload:
+                        if payload["pdf2zh_service"] == "google":
+                            time.sleep(0.15)
+                        settings["pdf2zh_service"] = payload["pdf2zh_service"]
                     self.respond(200, {"outbox_dir": "/tmp"})
                 elif self.path == "/api/upload":
                     uploads.append(body)

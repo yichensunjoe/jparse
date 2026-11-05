@@ -33,15 +33,25 @@ struct MacOSUIChecks {
         try Data("%PDF-1.4 test".utf8).write(to: second)
 
         manager.selectedPipeline = .vector
-        manager.selectedService = .google
+        manager.selectTranslationService(.google)
+        manager.selectTranslationService(.bing)
+        manager.selectTranslationService(.google)
         manager.handleDroppedURLs([first, second])
         precondition(manager.isUploading)
         manager.selectedPipeline = .hdScan
-        manager.selectedService = .bing
         try await waitFor { !manager.isUploading }
         precondition(manager.errorMessage?.contains("1 份未能添加") == true)
         precondition(manager.errorMessage?.contains("two.pdf") == true)
         precondition(manager.errorMessage?.contains("HTTP 400") == true)
+
+        var request = URLRequest(url: manager.serverBaseURL.appendingPathComponent("api/settings"))
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["pdf2zh_service": "bing"])
+        _ = try await URLSession.shared.data(for: request)
+        manager.handleDroppedURLs([first])
+        try await waitFor { !manager.isUploading }
+        precondition(manager.errorMessage?.contains("在其他位置更改") == true)
 
         manager.handleDroppedURLs([directory.appendingPathComponent("missing.txt")])
         precondition(manager.errorMessage?.contains("未找到") == true)

@@ -63,16 +63,18 @@ jobs:
           & $python scripts/windows_exe_smoke.py --project (Join-Path $runtime.FullName 'project') --port 18765
           if ($LASTEXITCODE -ne 0) { throw 'Windows PDF smoke test failed' }
           # Exercise the actual no-argument, double-click launch path too.
+          $portFile = Join-Path $env:JPARSE_DATA_DIR ('.port-' + $runtime.Name)
           $gui = Start-Process -FilePath $exe -PassThru
           $deadline = (Get-Date).AddSeconds(90)
           $guiHealthy = $false
           $browserStarted = $false
           do {
+            $guiPort = Get-Content $portFile -ErrorAction SilentlyContinue
             try {
-              $guiHealthy = (Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8765/api/tasks -TimeoutSec 2).StatusCode -eq 200
+              $guiHealthy = (Invoke-WebRequest -UseBasicParsing "http://127.0.0.1:$guiPort/api/tasks" -TimeoutSec 2).StatusCode -eq 200
             } catch { }
             $browserStarted = [bool](Get-CimInstance Win32_Process -Filter "Name='msedge.exe' OR Name='chrome.exe'" |
-              Where-Object { $_.CommandLine -like '*--app=http://127.0.0.1:8765*' } | Select-Object -First 1)
+              Where-Object { $_.CommandLine -like "*--app=http://127.0.0.1:$guiPort*" } | Select-Object -First 1)
             if ($guiHealthy -and $browserStarted) { break }
             Start-Sleep -Seconds 2
           } while ((Get-Date) -lt $deadline)

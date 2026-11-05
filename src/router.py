@@ -61,20 +61,19 @@ def probe_pdf_document_type(pdf_path: Path, max_check_pages: int = 3) -> str:
 def _page_looks_scanned(page) -> bool:
     """Heuristics: full-page raster, OCR font layers, or almost no text."""
     p_area = max(1.0, page.rect.width * page.rect.height)
-    imgs = page.get_images()
+    imgs = page.get_image_info()
     fonts = page.get_fonts()
 
     # 1. Full-page raster image check (typical in scanned books and microfiche)
     has_full_page_img = False
     for img in imgs:
-        xref = img[0]
         try:
-            for rect in page.get_image_rects(xref):
-                if (rect.width * rect.height) / p_area > 0.75:
-                    has_full_page_img = True
-                    break
-        except Exception:
-            pass
+            rect = fitz.Rect(img["bbox"])
+            if (rect.width * rect.height) / p_area >= 0.5:
+                has_full_page_img = True
+                break
+        except (KeyError, TypeError, ValueError):
+            continue
 
     # 2. Font inspection: OCR layers typically use GlyphLessFont, Type3, or a generic font
     is_ocr_font = any(

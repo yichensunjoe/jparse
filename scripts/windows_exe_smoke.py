@@ -51,7 +51,7 @@ if os.environ.get("JPARSE_PADDLE_PYTHON"):
             os.environ["HF_HUB_OFFLINE"] = previous_offline
     print("Bundled offline bitmap OCR passed", flush=True)
 
-pdf = inbox / "jparse-smoke.pdf"
+pdf = inbox / ".jparse-smoke.pdf"
 doc = fitz.open()
 page = doc.new_page()
 page.insert_text((72, 72), "JParse smoke test. This document was generated for a local PDF extraction test.")
@@ -100,3 +100,38 @@ if not args.offline_only:
         assert any("\u4e00" <= char <= "\u9fff" for char in translated_text), "No Chinese text in translated PDF"
     assert (root / "processed" / "jparse-smoke.pdf").is_file(), "Original was not archived"
     print("Desktop upload, Bing translation, PDF delivery and archival passed:", names, flush=True)
+
+    # A normal PDF dropped into the actual inbox must be processed automatically.
+    (inbox / "watcher-smoke.pdf").write_bytes(pdf_bytes)
+    deadline = time.monotonic() + 420
+    while time.monotonic() < deadline:
+        if (root / "processed" / "watcher-smoke.pdf").exists():
+            break
+        if (root / "failed" / "watcher-smoke.pdf").exists():
+            raise AssertionError("Inbox watcher failed to process its PDF")
+        time.sleep(2)
+    assert (root / "processed" / "watcher-smoke.pdf").is_file(), "Inbox PDF was not processed"
+    assert (root / "outbox" / "watcher-smoke-中文精译版.pdf").is_file()
+    print("Inbox watcher processed and archived the PDF", flush=True)
+
+    # Image-only scans are not silently marked successful if extraction found
+    # no OCR text. The original must be retained in failed/.
+    import io
+    from PIL import Image
+    picture = io.BytesIO()
+    Image.new("RGB", (200, 200), "white").save(picture, format="PNG")
+    scan_doc = fitz.open()
+    scan_page = scan_doc.new_page()
+    scan_page.insert_image(scan_page.rect, stream=picture.getvalue())
+    scan_page.insert_text((50, 50), "1")  # A page number is not an OCR layer.
+    scan = inbox / "image-only-scan.pdf"
+    scan_doc.save(scan)
+    scan_doc.close()
+    deadline = time.monotonic() + 180
+    while time.monotonic() < deadline:
+        if (root / "failed" / scan.name).exists() or (root / "processed" / scan.name).exists():
+            break
+        time.sleep(2)
+    assert (root / "failed" / scan.name).is_file(), "Unrecognized scan was not retained as a failure"
+    assert not (root / "processed" / scan.name).exists(), "Unrecognized scan was incorrectly archived as success"
+    print("Image-only scan was safely rejected and retained", flush=True)

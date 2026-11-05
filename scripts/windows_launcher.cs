@@ -66,6 +66,7 @@ internal static class JParseLauncher
         string baseDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "JParse");
         Directory.CreateDirectory(baseDir);
         string runtime;
+        string runtimeId;
         using (FileStream input = File.OpenRead(exe))
         {
             if (input.Length < TrailerSize) throw new InvalidDataException("程序包不完整。");
@@ -80,6 +81,7 @@ internal static class JParseLauncher
             if (!Equal(magic, Magic) || size <= 0 || size > input.Length - TrailerSize)
                 throw new InvalidDataException("程序包头部无效。");
             string key = BitConverter.ToString(expectedHash).Replace("-", "").ToLowerInvariant();
+            runtimeId = key;
             string runtimes = Path.Combine(baseDir, "runtimes");
             Directory.CreateDirectory(runtimes);
             runtime = Path.Combine(runtimes, key);
@@ -111,6 +113,8 @@ internal static class JParseLauncher
         start.UseShellExecute = false;
         start.CreateNoWindow = true;
         start.EnvironmentVariables["JPARSE_DATA_DIR"] = data;
+        start.EnvironmentVariables["JPARSE_RUNTIME_ID"] = runtimeId;
+        start.EnvironmentVariables["JPARSE_WATCH_INBOX"] = "1";
         start.EnvironmentVariables["JPARSE_BUNDLED_PYTHON"] = Path.Combine(pythonDir, "python.exe");
         start.EnvironmentVariables["JPARSE_PADDLE_PYTHON"] = Path.Combine(runtime, "ocr-python", "python.exe");
         start.EnvironmentVariables["PADDLE_PDX_CACHE_HOME"] = Path.Combine(runtime, "ocr-models");
