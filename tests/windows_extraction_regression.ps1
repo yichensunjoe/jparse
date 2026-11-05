@@ -53,7 +53,21 @@ try {
     $held = $lockMethod.Invoke($null, $lockArgs)
     $worker = Join-Path $root 'lock-worker.ps1'
     @'
-param([string]$LockPath, [string]$Expected)
+param([string]$LockPath, [string]$Expected, [string]$Stub, [string]$Signal, [string]$Parent, [string]$Key)
+if ($Expected -eq 'wait') {
+    try {
+        $assembly = [Reflection.Assembly]::LoadFrom($Stub)
+        $type = $assembly.GetType('JParseLauncher', $true)
+        $method = $type.GetMethod('AcquireRuntimeLock', [Reflection.BindingFlags]'NonPublic,Static')
+        $arguments = [object[]]::new(2)
+        $arguments[0] = [string]$Parent
+        $arguments[1] = [string]$Key
+        [IO.File]::WriteAllText($Signal + '.ready', 'ready')
+        $acquired = $method.Invoke($null, $arguments)
+        try { [IO.File]::WriteAllText($Signal, 'acquired') } finally { $acquired.Dispose() }
+        exit 0
+    } catch { exit 1 }
+}
 try {
     $file = [IO.FileStream]::new($LockPath, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None)
     $file.Dispose()
@@ -66,10 +80,27 @@ try {
 '@ | Set-Content -LiteralPath $worker -Encoding utf8
     $pwsh = (Get-Process -Id $PID).Path
     $lockPath = Join-Path $parent ('.lock-' + $lockKey)
+    $waiting = $null
     try {
         & $pwsh -NoProfile -NonInteractive -File $worker $lockPath 'locked'
         if ($LASTEXITCODE -ne 0) { throw 'A second process obtained a held runtime lock' }
+        $signal = Join-Path $root 'lock-acquired.txt'
+        $waiting = Start-Process -FilePath $pwsh -PassThru -ArgumentList @(
+            '-NoProfile', '-NonInteractive', '-File', ('"' + $worker + '"'),
+            ('"' + $lockPath + '"'), 'wait', ('"' + $stub + '"'),
+            ('"' + $signal + '"'), ('"' + $parent + '"'), $lockKey
+        )
+        $readyDeadline = (Get-Date).AddSeconds(10)
+        while (!(Test-Path ($signal + '.ready')) -and (Get-Date) -lt $readyDeadline) {
+            Start-Sleep -Milliseconds 100
+        }
+        if (!(Test-Path ($signal + '.ready'))) { throw 'Waiting process did not start' }
+        Start-Sleep -Milliseconds 500
+        if (Test-Path $signal) { throw 'Waiting process acquired a held runtime lock' }
     } finally { $held.Dispose() }
+    if (!$waiting.WaitForExit(15000) -or $waiting.ExitCode -ne 0 -or !(Test-Path $signal)) {
+        throw 'Waiting process did not acquire the runtime lock after release'
+    }
     & $pwsh -NoProfile -NonInteractive -File $worker $lockPath 'free'
     if ($LASTEXITCODE -ne 0) { throw 'Runtime lock was not released' }
     Write-Host 'Runtime file lock excludes other processes and releases correctly'
