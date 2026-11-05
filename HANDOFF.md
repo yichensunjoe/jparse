@@ -4,12 +4,14 @@
 
 ## 当前状态（2026-11-05）
 
-- 已完成：Windows x64 单文件 EXE，内置 Python、Java、版面/字体和 PaddleOCR；用户数据位于 `%LOCALAPPDATA%\JParse\data`，本地成品在 `outbox/JParse-Windows-x64.exe`，`dist/` 保留已校验下载副本。
-- 已验证：主分支 CI 41960426028 成功；Windows 43 项测试、双击启动、离线位图 OCR、在线 PDF 翻译、中文文件名投递及失败归档通过；本机 336 项单测通过。
-- 交付：代码已推送主分支；Actions 构件保留 30 天，EXE 未做商业签名。Mac 客户端已为共享设置接口重编译，旧版保留在 `build/`。
-- 限制与下一步：无可用正文文字层的纯扫描页会明确失败并保留原件；整页扫描 OCR 翻译尚未完成。Bing/Google 翻译需要联网。
+- 已完成：针对 Windows 首启 `.extract-*` 访问被拒绝，改为短路径、流式原位解包、哈希标记、中断后复用目录重试与跨进程文件锁；旧用户数据和旧 EXE 保留。
+- 交付：新版 `outbox/JParse-Windows-x64-权限修复版.exe` 已从通过测试的 CI 构件下载并校验；代码已推送主分支。
+- 已验证：受限 ACL 回归与分支 Windows CI 41978892132 成功（44 项测试、真实启动、OCR、PDF 转换）；本机 337 项单测（1 项仅打包环境执行）及 PDF 端到端验证通过。主分支 Windows CI 41979865182 第 2 次运行通过（首次在 PDF 翻译阶段超时）。
+- 限制与下一步：请用户在实际电脑上试新版；若仍被拒绝，查看新错误信息及 `%LOCALAPPDATA%\JParse\data\logs\launcher-bootstrap.log`。纯扫描页整页 OCR 翻译仍未完成，在线翻译需联网。
+- 界面说明：Windows 使用旧版网页工作台，macOS 使用单独的 SwiftUI 界面，因此布局和样式不同；用户询问了两端差异。
 
 ## 近期轮次（最新在上，保留全部）
+- 2026-11-05（Windows 首启访问拒绝修复）：在仅允许写入的 Windows ACL 下复现旧版目录移动失败，改为短路径直接解包、哈希标记后复用目录重试、跨进程锁及保留原始错误；受限权限回归、分支完整 Windows CI 与本机 337 项测试通过。新版 EXE 已放入 outbox；主分支 CI 重试通过，等待用户实机确认。
 - 2026-11-05（Windows 自包含 EXE 与 CI）：构建含 Python/Java/版面模型/PaddleOCR 的单文件 EXE，修复无控制台 HTTP、输入副本、Windows OCR 后端、投递与中断恢复；锁定翻译依赖。主分支 CI 41960426028 通过，43 项 Windows 测试、真实转换与双击启动通过；本机 336 项单测通过。下一步：纯扫描页 OCR 翻译需另行完善。
 - 2026-11-05（清理 Windows 安装包产物与 GitHub Release）：响应用户要求删除关于 Windows 安装包的内容。通过 gh release delete 彻底下线 GitHub Release v2.1.0 及 tag；清理本地 release/ 与 outbox/ 中的 zip 包，移除打包脚本与 staging；全量 305/305 单测保持全绿。下一步：日常使用。
 - 2026-11-04（Windows 与 macOS 安装包打包及 GitHub Release v2.1.0 发布）：新增 scripts/package_release.py 自动将全套 Windows 批处理/静默启动器/源码/文档及使用说明打包为 JParse-Windows-v2.1.0.zip（9.49 MB），同步产出 macOS JParse-macOS-v2.1.0.zip；两个安装包均已保存在本地 release/ 与 outbox/ 目录下，并已发布至 GitHub Release (tag v2.1.0)。下一步：用户可直接通过本地或 GitHub 下载安装包。
